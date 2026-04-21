@@ -16,7 +16,8 @@ router.get('/', async (req, res) => {
 		const scripts = await db('scripts')
 			.select('scripts.id', 'name', 'description', 'is_official', 'username as author')
 			.join('users', 'users.id', 'scripts.owner_id')
-			.limit(20);
+			.limit(20)
+			.orderBy('scripts.created_at', 'asc');
 		res.json(scripts);
 	} catch (err) {
 		console.log(err)
