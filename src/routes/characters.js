@@ -5,7 +5,7 @@ const router = Router();
 
 // Get all characters (ordered alphabetically and grouped by type)
 /**
- * SELECT id, name, type, ability FROM characters
+ * SELECT id, name, type, ability, wiki_link_name FROM characters
  * ORDER BY
  * 	CASE type
  * 		WHEN 'townsfolk' THEN 1
@@ -19,7 +19,7 @@ const router = Router();
 router.get("/", async (req, res) => {
 	try {
 		const characters = await db('characters')
-			.select('id', 'name', 'type', 'ability')
+			.select('id', 'name', 'type', 'ability', 'wiki_link_name')
 			.orderByRaw(`
 				CASE type
 					WHEN 'townsfolk' THEN 1
@@ -42,7 +42,7 @@ router.get("/:id", async (req, res) => {
 	const { id } = req.params;
 	try {
 		const character = await db('characters')
-			.select('id', 'name', 'type', 'ability', 'flavor_text')
+			.select('id', 'name', 'type', 'ability', 'flavor_text', 'wiki_link_name')
 			.where('id', id).first();
 		return res.json(character);
 	} catch (err) {
