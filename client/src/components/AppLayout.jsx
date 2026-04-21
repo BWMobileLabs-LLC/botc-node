@@ -82,6 +82,15 @@ export default function AppLayout() {
             >
               Characters
             </NavLink>
+            <NavLink
+              to="/auth"
+              onClick={closeNavIfNarrow}
+              className={({ isActive }) =>
+                `layout__nav-link${isActive ? ' layout__nav-link--active' : ''}`
+              }
+            >
+              Account
+            </NavLink>
           </nav>
         </aside>
 
