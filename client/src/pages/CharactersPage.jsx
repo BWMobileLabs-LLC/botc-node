@@ -18,6 +18,13 @@ function formatTypeLabel(type) {
   return type.charAt(0).toUpperCase() + type.slice(1)
 }
 
+const WIKI_BASE = 'https://wiki.bloodontheclocktower.com/'
+
+function characterWikiHref(wikiLinkName) {
+  if (!wikiLinkName) return null
+  return `${WIKI_BASE}${wikiLinkName}`
+}
+
 export default function CharactersPage() {
   const [characters, setCharacters] = useState([])
   const [loadError, setLoadError] = useState(null)
@@ -125,8 +132,9 @@ export default function CharactersPage() {
             <ul className="characters-grid">
               {filtered.map((c) => {
                 const iconSrc = getCharacterIconSrc(c)
-                return (
-                  <li key={c.id} className="characters-card">
+                const wikiHref = characterWikiHref(c.wiki_link_name)
+                const cardInner = (
+                  <>
                     <div className="characters-card__icon-wrap">
                       {iconSrc ? (
                         <img
@@ -154,6 +162,23 @@ export default function CharactersPage() {
                       <h2 className="characters-card__name">{c.name}</h2>
                     </div>
                     <p className="characters-card__ability">{c.ability}</p>
+                  </>
+                )
+                return (
+                  <li key={c.id} className="characters-card-wrap">
+                    {wikiHref ? (
+                      <a
+                        className="characters-card characters-card--clickable"
+                        href={wikiHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`${c.name} on the Blood on the Clocktower wiki (opens in new tab)`}
+                      >
+                        {cardInner}
+                      </a>
+                    ) : (
+                      <div className="characters-card">{cardInner}</div>
+                    )}
                   </li>
                 )
               })}
