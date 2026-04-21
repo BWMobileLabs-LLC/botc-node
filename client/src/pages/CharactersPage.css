@@ -1,19 +1,30 @@
 .page.characters-page {
   max-width: min(72rem, 100%);
+  margin-inline: auto;
+  text-align: center;
+}
+
+.page.characters-page .page__title {
+  text-align: center;
 }
 
 .characters-toolbar {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 1.25rem;
   margin-top: 1.25rem;
   margin-bottom: 1.5rem;
+  width: 100%;
 }
 
 .characters-search {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.35rem;
+  width: 100%;
+  max-width: 24rem;
 }
 
 .characters-search__label {
@@ -24,7 +35,6 @@
 
 .characters-search input {
   width: 100%;
-  max-width: 24rem;
   box-sizing: border-box;
   padding: 0.5rem 0.65rem;
   font: inherit;
@@ -45,6 +55,9 @@
   border: 1px solid var(--layout-border);
   border-radius: 0.5rem;
   background: var(--layout-sidebar-bg);
+  width: 100%;
+  max-width: 36rem;
+  text-align: center;
 }
 
 .characters-types__legend {
@@ -58,6 +71,7 @@
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
   margin-top: 0.5rem;
+  justify-content: center;
 }
 
 .characters-type-toggle {
@@ -76,6 +90,7 @@
 .characters-status {
   margin: 0;
   color: var(--muted);
+  text-align: center;
 }
 
 .characters-status--error {
@@ -92,6 +107,7 @@
   margin: 0;
   color: var(--muted);
   font-size: 0.95rem;
+  text-align: center;
 }
 
 .characters-grid {
@@ -101,6 +117,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
   gap: 1rem;
+  justify-content: center;
 }
 
 .characters-card {
