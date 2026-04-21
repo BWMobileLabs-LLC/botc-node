@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout.jsx'
 import AuthPage from './pages/AuthPage.jsx'
 import CharactersPage from './pages/CharactersPage.jsx'
+import CreateScriptPage from './pages/CreateScriptPage.jsx'
 import HomePage from './pages/HomePage.jsx'
 import MyScriptsPage from './pages/MyScriptsPage.jsx'
 import ScriptDetailPage from './pages/ScriptDetailPage.jsx'
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/characters" element={<CharactersPage />} />
         <Route path="/my-scripts" element={<MyScriptsPage />} />
         <Route path="/scripts" element={<ScriptsPage />} />
+        <Route path="/scripts/new" element={<CreateScriptPage />} />
         <Route path="/scripts/:scriptId" element={<ScriptDetailPage />} />
         <Route path="/auth" element={<AuthPage />} />
       </Route>

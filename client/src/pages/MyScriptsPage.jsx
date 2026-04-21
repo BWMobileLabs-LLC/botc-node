@@ -53,7 +53,12 @@ export default function MyScriptsPage() {
 
   return (
     <div className="page scripts-page">
-      <h1 className="page__title">My scripts</h1>
+      <div className="scripts-page__head">
+        <h1 className="page__title">My scripts</h1>
+        <Link to="/scripts/new" className="scripts-page__action-btn">
+          Create script
+        </Link>
+      </div>
       <p className="scripts-page__intro">
         Scripts you own. Open one for full character order and abilities.
       </p>

@@ -45,7 +45,12 @@ export default function ScriptsPage() {
 
   return (
     <div className="page scripts-page">
-      <h1 className="page__title">Scripts</h1>
+      <div className="scripts-page__head">
+        <h1 className="page__title">Scripts</h1>
+        <Link to="/scripts/new" className="scripts-page__action-btn">
+          Create script
+        </Link>
+      </div>
       <p className="scripts-page__intro">
         Public scripts from the catalog (up to 20). More browsing and editing will come later.
       </p>
