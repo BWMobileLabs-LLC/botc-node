@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { createAuthorizedFetch } from './authorizedFetch.js'
 import { AuthContext } from './authContext.js'
 import { clearPersistedSession, loadPersistedSession, persistSession } from './session.js'
 
@@ -28,6 +29,16 @@ export function AuthProvider({ children }) {
     clearPersistedSession()
   }, [])
 
+  const authorizedFetch = useMemo(
+    () =>
+      createAuthorizedFetch({
+        getAccessToken: () => accessToken,
+        getUser: () => user,
+        applySession,
+      }),
+    [accessToken, user, applySession]
+  )
+
   const value = useMemo(
     () => ({
       accessToken,
@@ -35,8 +46,9 @@ export function AuthProvider({ children }) {
       isAuthenticated: Boolean(accessToken),
       applySession,
       signOut,
+      authorizedFetch,
     }),
-    [accessToken, user, applySession, signOut]
+    [accessToken, user, applySession, signOut, authorizedFetch]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

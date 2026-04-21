@@ -30,6 +30,17 @@
   color: var(--muted);
 }
 
+.scripts-page__inline-link {
+  color: var(--layout-focus);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.scripts-page__inline-link:hover {
+  text-decoration-thickness: 2px;
+}
+
 .scripts-list {
   list-style: none;
   margin: 1.25rem 0 0;

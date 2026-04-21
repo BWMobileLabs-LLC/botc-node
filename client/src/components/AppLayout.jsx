@@ -92,6 +92,15 @@ export default function AppLayout() {
               Scripts
             </NavLink>
             <NavLink
+              to="/my-scripts"
+              onClick={closeNavIfNarrow}
+              className={({ isActive }) =>
+                `layout__nav-link${isActive ? ' layout__nav-link--active' : ''}`
+              }
+            >
+              My Scripts
+            </NavLink>
+            <NavLink
               to="/auth"
               onClick={closeNavIfNarrow}
               className={({ isActive }) =>
