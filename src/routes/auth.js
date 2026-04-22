@@ -135,7 +135,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 	const id = req.user_id;
 	try {
 		const data = await db('users')
-			.select('username', 'email', 'display_name', 'created_at')
+			.select('id', 'username', 'email', 'display_name', 'created_at')
 			.where('id', id).first();
 		res.json(data);
 	} catch (err) {
@@ -208,9 +208,17 @@ router.post('/refresh', async (req, res) => {
 			}
 		);
 
+		const userRow = await db('users')
+			.select('id', 'username')
+			.where('id', user_id)
+			.first();
+
 		return res.json({
 			user_id,
-			accessToken
+			accessToken,
+			user: userRow
+				? { id: userRow.id, username: userRow.username }
+				: { id: user_id, username: '' }
 		});
 
 	} catch (err) {
