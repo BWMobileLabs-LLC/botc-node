@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import '../App.css'
 import './ScriptDetailPage.css'
+import { useAuth } from '../auth/useAuth.js'
 import { getCharacterIconSrc } from '../utils/characterIcon.js'
 
 const CHARACTER_TYPE_ORDER = [
@@ -143,9 +144,17 @@ function ScriptTypeSection({ type, characters }) {
 }
 
 function ScriptDetailView({ scriptId }) {
+  const { user, isAuthenticated } = useAuth()
   const [script, setScript] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const [loading, setLoading] = useState(true)
+
+  const canEdit =
+    isAuthenticated &&
+    script &&
+    user?.username &&
+    script.author &&
+    user.username === script.author
 
   const sections = useMemo(
     () => (script?.characters?.length ? groupCharactersByType(script.characters) : []),
@@ -205,7 +214,17 @@ function ScriptDetailView({ scriptId }) {
       {!loading && !loadError && script && (
         <>
           <header className="script-detail__header">
-            <h1 className="page__title">{script.name}</h1>
+            <div className="script-detail__title-row">
+              <h1 className="page__title script-detail__title">{script.name}</h1>
+              {canEdit && (
+                <Link
+                  to={`/scripts/${encodeURIComponent(scriptId)}/edit`}
+                  className="script-detail__edit"
+                >
+                  Edit script
+                </Link>
+              )}
+            </div>
             <div className="script-detail__meta">
               {script.is_official && (
                 <span className="script-detail__badge script-detail__badge--official">

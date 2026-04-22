@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
 import './CreateScriptPage.css'
 import { useAuth } from '../auth/useAuth.js'
@@ -27,6 +27,8 @@ function countByScriptRole(characters) {
 
 export default function CreateScriptPage() {
   const navigate = useNavigate()
+  const { scriptId: editScriptId } = useParams()
+  const isEditMode = Boolean(editScriptId)
   const { authorizedFetch } = useAuth()
   const [pool, setPool] = useState([])
   const [loading, setLoading] = useState(true)
@@ -37,6 +39,8 @@ export default function CreateScriptPage() {
   const [saveError, setSaveError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [pickerQuery, setPickerQuery] = useState('')
+  const [editScriptLoading, setEditScriptLoading] = useState(isEditMode)
+  const [editLoadError, setEditLoadError] = useState(null)
 
   const inScriptIds = useMemo(() => new Set(scriptChars.map((c) => c.id)), [scriptChars])
 
@@ -93,6 +97,58 @@ export default function CreateScriptPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!editScriptId) {
+      setEditScriptLoading(false)
+      setEditLoadError(null)
+      return
+    }
+
+    let cancelled = false
+    setEditScriptLoading(true)
+    setEditLoadError(null)
+
+    fetch(`/api/scripts/${encodeURIComponent(editScriptId)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body.error || `Request failed (${res.status})`)
+        }
+        return res.json()
+      })
+      .then((data) => {
+        if (cancelled) return
+        if (!data || typeof data !== 'object') {
+          setEditLoadError('Script not found.')
+          setTitle('')
+          setDescription('')
+          setScriptChars([])
+          return
+        }
+        setTitle(data.name ?? '')
+        setDescription(data.description ?? '')
+        const chars = Array.isArray(data.characters)
+          ? data.characters.filter((c) => c.type !== 'traveller')
+          : []
+        setScriptChars(chars)
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setEditLoadError(err.message || 'Could not load script.')
+          setTitle('')
+          setDescription('')
+          setScriptChars([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setEditScriptLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [editScriptId])
+
   const toggleChar = useCallback((c) => {
     setScriptChars((prev) => {
       const i = prev.findIndex((x) => x.id === c.id)
@@ -107,15 +163,20 @@ export default function CreateScriptPage() {
     const t = title.trim()
     if (!t || !canSave) return
     setSaving(true)
+    const payload = {
+      script_title: t,
+      description: description.trim(),
+      character_names: scriptChars.map((c) => c.name),
+    }
     try {
-      const res = await authorizedFetch('/api/scripts/', {
-        method: 'POST',
+      const url = isEditMode
+        ? `/api/scripts/${encodeURIComponent(editScriptId)}`
+        : '/api/scripts/'
+      const method = isEditMode ? 'PUT' : 'POST'
+      const res = await authorizedFetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          script_title: t,
-          description: description.trim(),
-          character_names: scriptChars.map((c) => c.name),
-        }),
+        body: JSON.stringify(payload),
       })
       if (res.status === 401) {
         setSaveError('sign_in_required')
@@ -123,29 +184,36 @@ export default function CreateScriptPage() {
       }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        setSaveError(body.message || `Could not create script (${res.status})`)
+        const fallback = isEditMode
+          ? `Could not update script (${res.status})`
+          : `Could not create script (${res.status})`
+        setSaveError(body.message || body.error || fallback)
         return
       }
       const data = await res.json()
-      if (data?.script_id != null) {
-        navigate(`/scripts/${data.script_id}`)
+      const id = data?.script_id ?? (isEditMode ? editScriptId : null)
+      if (id != null) {
+        navigate(`/scripts/${id}`)
       } else {
         setSaveError('Unexpected response from server.')
       }
     } catch {
-      setSaveError('Could not create script.')
+      setSaveError(isEditMode ? 'Could not update script.' : 'Could not create script.')
     } finally {
       setSaving(false)
     }
   }
 
+  const backTo = isEditMode ? `/scripts/${encodeURIComponent(editScriptId)}` : '/scripts'
+  const pageTitle = isEditMode ? 'Edit script' : 'Create script'
+
   return (
     <div className="page create-script-page">
       <header className="create-script-page__top">
-        <Link to="/scripts" className="create-script-page__back">
-          ← Scripts
+        <Link to={backTo} className="create-script-page__back">
+          {isEditMode ? '← Back to script' : '← Scripts'}
         </Link>
-        <h1 className="page__title">Create script</h1>
+        <h1 className="page__title">{pageTitle}</h1>
         <p className="create-script-page__lede">
           Pick characters from the sidebar. Click again in the list to remove one from your script.
           Travellers are not included. A full script needs at least 13 townsfolk, 4 outsiders, 4 minions,
@@ -226,7 +294,20 @@ export default function CreateScriptPage() {
         </aside>
 
         <main className="create-script-page__main">
-          <form className="create-script-page__form" onSubmit={handleSubmit} noValidate>
+          {isEditMode && editScriptLoading && (
+            <p className="create-script-page__sidebar-status">Loading script…</p>
+          )}
+          {isEditMode && !editScriptLoading && editLoadError && (
+            <p className="create-script-page__sidebar-status create-script-page__sidebar-status--error" role="alert">
+              {editLoadError}
+            </p>
+          )}
+          <form
+            className="create-script-page__form"
+            onSubmit={handleSubmit}
+            noValidate
+            hidden={isEditMode && (editScriptLoading || editLoadError)}
+          >
             <label className="create-script-page__field">
               <span className="create-script-page__label">Script name</span>
               <input
@@ -353,9 +434,9 @@ export default function CreateScriptPage() {
               <button
                 type="submit"
                 className="create-script-page__submit"
-                disabled={saving || !canSave}
+                disabled={saving || !canSave || (isEditMode && (editScriptLoading || Boolean(editLoadError)))}
               >
-                {saving ? 'Saving…' : 'Save script'}
+                {saving ? 'Saving…' : isEditMode ? 'Save changes' : 'Save script'}
               </button>
             </div>
           </form>

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createAuthorizedFetch } from './authorizedFetch.js'
 import { AuthContext } from './authContext.js'
 import { clearPersistedSession, loadPersistedSession, persistSession } from './session.js'
@@ -28,6 +28,38 @@ export function AuthProvider({ children }) {
     setUser(null)
     clearPersistedSession()
   }, [])
+
+  /** Repair sessions that have an access token but no usable user (e.g. after refresh before server returned `user`). */
+  useEffect(() => {
+    if (!accessToken || user?.username) return
+
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          credentials: 'include',
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled || !data?.username) return
+        const nextUser = {
+          id: data.id,
+          username: data.username,
+          ...(data.email ? { email: data.email } : {}),
+        }
+        setUser(nextUser)
+        persistSession(accessToken, nextUser)
+      } catch {
+        /* ignore */
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [accessToken, user?.username])
 
   const authorizedFetch = useMemo(
     () =>

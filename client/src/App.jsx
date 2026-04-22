@@ -17,6 +17,7 @@ export default function App() {
         <Route path="/my-scripts" element={<MyScriptsPage />} />
         <Route path="/scripts" element={<ScriptsPage />} />
         <Route path="/scripts/new" element={<CreateScriptPage />} />
+        <Route path="/scripts/:scriptId/edit" element={<CreateScriptPage />} />
         <Route path="/scripts/:scriptId" element={<ScriptDetailPage />} />
         <Route path="/auth" element={<AuthPage />} />
       </Route>

@@ -26,9 +26,11 @@ export function createAuthorizedFetch({ getAccessToken, getUser, applySession })
         if (!data?.accessToken) return null
         const prevUser = getUser()
         const nextUser =
-          prevUser && String(prevUser.id) === String(data.user_id)
-            ? prevUser
-            : { id: data.user_id, username: prevUser?.username ?? '' }
+          data.user?.id != null && typeof data.user.username === 'string'
+            ? { id: data.user.id, username: data.user.username }
+            : prevUser && String(prevUser.id) === String(data.user_id)
+              ? prevUser
+              : { id: data.user_id, username: prevUser?.username ?? '' }
         applySession(data.accessToken, nextUser)
         return data.accessToken
       })().finally(() => {
