@@ -144,6 +144,37 @@ router.get('/me', authMiddleware, async (req, res) => {
 	}
 });
 
+// Update user data (partial body OK — only present fields are written)
+router.put('/me', authMiddleware, async (req, res) => {
+	const id = req.user_id;
+	const { username, email, display_name, password } = req.body;
+	try {
+		const payload = {};
+		if (username !== undefined) payload.username = username;
+		if (email !== undefined) payload.email = email;
+		if (display_name !== undefined) payload.display_name = display_name;
+		if (password != null && String(password).length > 0) {
+			payload.password_hash = await bcrypt.hash(password, 12);
+		}
+
+		if (Object.keys(payload).length === 0) {
+			return res.status(400).json({ error: 'No fields to update' });
+		}
+
+		payload.updated_at = db.fn.now();
+
+		await db('users').where('id', id).update(payload);
+
+		res.status(200).json({ message: 'User data updated' });
+	} catch (err) {
+		if (err.code === '23505') {
+			return res.status(409).json({ error: 'Username or email already in use' });
+		}
+		console.log(err);
+		res.status(500).json({ error: 'Failed to update user data' });
+	}
+});
+
 router.post('/refresh', async (req, res) => {
 	const refresh_token = req.cookies.refresh;
 	if (!refresh_token) {
