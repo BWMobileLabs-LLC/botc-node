@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import '../App.css'
 import './GamePage.css'
@@ -30,7 +30,10 @@ export default function GamePage() {
   const [joinError, setJoinError] = useState(null)
   const [createPending, setCreatePending] = useState(false)
   const [joinPending, setJoinPending] = useState(false)
-  const [leavePending, setLeavePending] = useState(false)
+  const [sessionActionPending, setSessionActionPending] = useState(false)
+  const [sessionActionError, setSessionActionError] = useState(null)
+  const [confirmAction, setConfirmAction] = useState(null)
+  const confirmDialogRef = useRef(null)
   const [copyOk, setCopyOk] = useState(false)
   const [gameSnapshot, setGameSnapshot] = useState(null)
   const [gameFetchStatus, setGameFetchStatus] = useState('idle')
@@ -39,6 +42,16 @@ export default function GamePage() {
   const refreshSession = useCallback(() => {
     setSession(loadGameSession())
   }, [])
+
+  useLayoutEffect(() => {
+    const el = confirmDialogRef.current
+    if (!el) return
+    if (confirmAction) {
+      if (!el.open) el.showModal()
+    } else if (el.open) {
+      el.close()
+    }
+  }, [confirmAction])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -230,22 +243,55 @@ export default function GamePage() {
     }
   }
 
-  const onLeaveLobby = async () => {
+  const performLeaveGame = async () => {
     const s = loadGameSession()
-    if (!s) return
-    setLeavePending(true)
+    if (!s || s.isStoryteller) {
+      setConfirmAction(null)
+      return
+    }
+    setSessionActionError(null)
+    setSessionActionPending(true)
     try {
-      if (!s.isStoryteller) {
-        await authorizedFetch(`/api/games/${encodeURIComponent(s.gameId)}/leave`, {
-          method: 'POST',
-        })
+      const res = await authorizedFetch(`/api/games/${encodeURIComponent(s.gameId)}/leave`, {
+        method: 'POST',
+      })
+      if (!res.ok && res.status !== 404) {
+        setSessionActionError(await readErrorMessage(res))
+        return
       }
-    } catch {
-      /* ignore */
-    } finally {
       clearGameSession()
       refreshSession()
-      setLeavePending(false)
+      setConfirmAction(null)
+    } catch {
+      setSessionActionError('Could not leave the game.')
+    } finally {
+      setSessionActionPending(false)
+    }
+  }
+
+  const performEndGame = async () => {
+    const s = loadGameSession()
+    if (!s || !s.isStoryteller) {
+      setConfirmAction(null)
+      return
+    }
+    setSessionActionError(null)
+    setSessionActionPending(true)
+    try {
+      const res = await authorizedFetch(`/api/games/${encodeURIComponent(s.gameId)}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        setSessionActionError(await readErrorMessage(res))
+        return
+      }
+      clearGameSession()
+      refreshSession()
+      setConfirmAction(null)
+    } catch {
+      setSessionActionError('Could not end the game.')
+    } finally {
+      setSessionActionPending(false)
     }
   }
 
@@ -278,7 +324,11 @@ export default function GamePage() {
           <p id="game-invite-heading" className="game-page__in-game-label">
             {resolvedIsStoryteller ? 'You are hosting this game.' : 'You are in this game.'}
           </p>
-          <p className="game-page__invite-hint">Share this invite code with players:</p>
+          <p className="game-page__invite-hint">
+            {resolvedIsStoryteller
+              ? 'Share this invite code with players:'
+              : 'Invite code for this game:'}
+          </p>
           <div className="game-page__invite-row">
             <output className="game-page__invite-code" aria-live="polite">
               {session.inviteCode}
@@ -350,14 +400,98 @@ export default function GamePage() {
             )}
           </div>
 
-          <button
-            type="button"
-            className="game-page__leave-btn"
-            onClick={onLeaveLobby}
-            disabled={leavePending}
+          {sessionActionError && (
+            <p className="game-page__session-action-error" role="alert">
+              {sessionActionError}
+            </p>
+          )}
+
+          {resolvedIsStoryteller ? (
+            <button
+              type="button"
+              className="game-page__danger-btn"
+              onClick={() => {
+                setSessionActionError(null)
+                setConfirmAction('endGame')
+              }}
+              disabled={sessionActionPending}
+            >
+              End game
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="game-page__leave-btn"
+              onClick={() => {
+                setSessionActionError(null)
+                setConfirmAction('leave')
+              }}
+              disabled={sessionActionPending}
+            >
+              Leave game
+            </button>
+          )}
+
+          <dialog
+            ref={confirmDialogRef}
+            className="game-page__confirm"
+            onClose={() => setConfirmAction(null)}
+            aria-labelledby="game-confirm-title"
           >
-            {leavePending ? 'Leaving…' : 'Leave lobby'}
-          </button>
+            {confirmAction === 'leave' && (
+              <>
+                <h2 id="game-confirm-title" className="game-page__confirm-title">
+                  Leave this game?
+                </h2>
+                <p className="game-page__confirm-body">
+                  You will be removed from the roster. You can join again later with the invite code.
+                </p>
+              </>
+            )}
+            {confirmAction === 'endGame' && (
+              <>
+                <h2 id="game-confirm-title" className="game-page__confirm-title">
+                  End this game?
+                </h2>
+                <p className="game-page__confirm-body">
+                  This deletes the game for everyone. Players will be removed from the lobby.
+                </p>
+              </>
+            )}
+            {(confirmAction === 'leave' || confirmAction === 'endGame') && (
+              <div className="game-page__confirm-actions">
+                <button
+                  type="button"
+                  className="game-page__confirm-cancel"
+                  onClick={() => setConfirmAction(null)}
+                  disabled={sessionActionPending}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={
+                    confirmAction === 'endGame'
+                      ? 'game-page__confirm-danger'
+                      : 'game-page__confirm-primary'
+                  }
+                  disabled={sessionActionPending}
+                  onClick={() => {
+                    if (confirmAction === 'leave') void performLeaveGame()
+                    else void performEndGame()
+                  }}
+                >
+                  {sessionActionPending
+                    ? confirmAction === 'endGame'
+                      ? 'Ending…'
+                      : 'Leaving…'
+                    : confirmAction === 'endGame'
+                      ? 'End game'
+                      : 'Leave game'}
+                </button>
+              </div>
+            )}
+          </dialog>
         </section>
       </div>
     )
