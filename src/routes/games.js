@@ -68,7 +68,7 @@ router.post('/join', authMiddleware, async (req, res) => {
 	try {
 		const game = await db('games')
 			.where('invite_code', invite_code)
-			.select('id', 'name')
+			.select('id', 'name', 'invite_code')
 			.first();
 
 		if (!game) {
@@ -80,7 +80,11 @@ router.post('/join', authMiddleware, async (req, res) => {
 			user_id: user_id
 		});
 
-		return res.status(200).json({ message: `Joined game ${game.name}` });
+		return res.status(200).json({
+			message: `Joined game ${game.name}`,
+			game_id: game.id,
+			invite_code: game.invite_code,
+		});
 	} catch (err) {
 		console.log(err);
 		return res.status(500).json({ error: 'Failed to join game' });
