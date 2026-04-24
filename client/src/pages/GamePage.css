@@ -419,6 +419,58 @@ button.game-page__seat:focus-visible {
   }
 }
 
+.game-page__story-actions {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 0.85rem;
+}
+
+.game-page__story-actions .game-page__danger-btn {
+  margin-top: 0;
+}
+
+.game-page__script-picker-open-btn {
+  padding: 0.45rem 0.85rem;
+  font: inherit;
+  font-weight: 500;
+  border: 1px solid var(--layout-border);
+  border-radius: 0.375rem;
+  background: var(--layout-header-bg);
+  color: inherit;
+  cursor: pointer;
+}
+
+.game-page__script-picker-open-btn:hover:not(:disabled) {
+  background: var(--layout-hover);
+}
+
+.game-page__script-picker-open-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.game-page__script-picker-field {
+  margin: 0 0 0.75rem;
+}
+
+.game-page__script-picker-search {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+  border: 1px solid var(--layout-border);
+  border-radius: 0.375rem;
+  background: var(--layout-header-bg);
+  color: inherit;
+}
+
+.game-page__script-picker-search:focus {
+  outline: 2px solid var(--layout-focus);
+  outline-offset: 1px;
+}
+
 .game-page__leave-btn,
 .game-page__danger-btn {
   margin-top: 1.25rem;

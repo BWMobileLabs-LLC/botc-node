@@ -86,6 +86,20 @@ export default function GamePage() {
   const [unseatError, setUnseatError] = useState(null)
   const unseatDialogRef = useRef(null)
 
+  /** Loaded from `GET /api/scripts/:id` when the game has `script_id` (for upcoming UI). */
+  const [gameScriptDetail, setGameScriptDetail] = useState(null)
+  const [gameScriptDetailStatus, setGameScriptDetailStatus] = useState('idle')
+  const [gameScriptDetailError, setGameScriptDetailError] = useState(null)
+
+  const [scriptPickerOpen, setScriptPickerOpen] = useState(false)
+  const scriptPickerDialogRef = useRef(null)
+  const [scriptSearchInput, setScriptSearchInput] = useState('')
+  const [scriptSearchResults, setScriptSearchResults] = useState([])
+  const [scriptSearchLoading, setScriptSearchLoading] = useState(false)
+  const [scriptSearchError, setScriptSearchError] = useState(null)
+  const [scriptPatchPending, setScriptPatchPending] = useState(false)
+  const [scriptPatchError, setScriptPatchError] = useState(null)
+
   const refreshSession = useCallback(() => {
     setSession(loadGameSession())
   }, [])
@@ -119,6 +133,96 @@ export default function GamePage() {
       el.close()
     }
   }, [unseatModal])
+
+  useLayoutEffect(() => {
+    const el = scriptPickerDialogRef.current
+    if (!el) return
+    if (scriptPickerOpen) {
+      if (!el.open) el.showModal()
+    } else if (el.open) {
+      el.close()
+    }
+  }, [scriptPickerOpen])
+
+  useEffect(() => {
+    const rawId = gameSnapshot?.game?.script_id
+    const scriptId =
+      rawId != null && String(rawId).trim() !== '' ? String(rawId).trim() : null
+
+    if (gameFetchStatus !== 'ok' || !scriptId) {
+      setGameScriptDetail(null)
+      setGameScriptDetailStatus('idle')
+      setGameScriptDetailError(null)
+      return
+    }
+
+    let cancelled = false
+    setGameScriptDetailStatus('loading')
+    setGameScriptDetailError(null)
+
+    fetch(`/api/scripts/${encodeURIComponent(scriptId)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body.error || `Request failed (${res.status})`)
+        }
+        return res.json()
+      })
+      .then((data) => {
+        if (cancelled) return
+        setGameScriptDetail(data)
+        setGameScriptDetailStatus('ok')
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setGameScriptDetail(null)
+          setGameScriptDetailError(err.message || 'Could not load script.')
+          setGameScriptDetailStatus('error')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [gameFetchStatus, gameSnapshot?.game?.script_id])
+
+  useEffect(() => {
+    if (!scriptPickerOpen) return
+
+    let cancelled = false
+    const q = scriptSearchInput.trim()
+    const url = q
+      ? `/api/scripts/search?${new URLSearchParams({ q })}`
+      : '/api/scripts/'
+
+    setScriptSearchLoading(true)
+    setScriptSearchError(null)
+
+    fetch(url)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body.message || body.error || `Request failed (${res.status})`)
+        }
+        return res.json()
+      })
+      .then((rows) => {
+        if (!cancelled) setScriptSearchResults(Array.isArray(rows) ? rows : [])
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setScriptSearchResults([])
+          setScriptSearchError(err.message || 'Could not search scripts.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setScriptSearchLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [scriptPickerOpen, scriptSearchInput])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -430,6 +534,38 @@ export default function GamePage() {
     [session?.gameId, authorizedFetch]
   )
 
+  const applyGameScript = useCallback(
+    async (scriptId) => {
+      const gid = session?.gameId
+      if (!gid || scriptId == null || String(scriptId).trim() === '') return
+      setScriptPatchError(null)
+      setScriptPatchPending(true)
+      try {
+        const res = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script_id: String(scriptId).trim() }),
+        })
+        if (!res.ok) {
+          setScriptPatchError(await readErrorMessage(res))
+          return
+        }
+        const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+        if (fresh.ok) {
+          const data = await fresh.json()
+          if (data?.game) setGameSnapshot(data)
+        }
+        setScriptPickerOpen(false)
+        setScriptSearchInput('')
+      } catch {
+        setScriptPatchError('Could not update script.')
+      } finally {
+        setScriptPatchPending(false)
+      }
+    },
+    [session?.gameId, authorizedFetch]
+  )
+
   if (!isAuthenticated) {
     return (
       <div className="page game-page">
@@ -468,7 +604,13 @@ export default function GamePage() {
     return (
       <div className="page game-page">
         <h1 className="page__title">Game</h1>
-        <section className="game-page__in-game" aria-labelledby="game-invite-heading">
+        <section
+          className="game-page__in-game"
+          aria-labelledby="game-invite-heading"
+          data-game-script-detail-status={gameScriptDetailStatus}
+          data-game-script-detail-has={gameScriptDetail ? '1' : '0'}
+          data-game-script-detail-error={gameScriptDetailError ?? ''}
+        >
           <div className="game-page__header-row">
             <div className="game-page__invite-block">
               <p id="game-invite-heading" className="game-page__in-game-label">
@@ -612,17 +754,34 @@ export default function GamePage() {
           )}
 
           {resolvedIsStoryteller ? (
-            <button
-              type="button"
-              className="game-page__danger-btn"
-              onClick={() => {
-                setSessionActionError(null)
-                setConfirmAction('endGame')
-              }}
-              disabled={sessionActionPending}
-            >
-              End game
-            </button>
+            <div className="game-page__story-actions">
+              <button
+                type="button"
+                className="game-page__script-picker-open-btn"
+                onClick={() => {
+                  setAssignSeatModal(null)
+                  setUnseatModal(null)
+                  setScriptPatchError(null)
+                  setScriptSearchError(null)
+                  setScriptSearchInput('')
+                  setScriptPickerOpen(true)
+                }}
+                disabled={gameFetchStatus !== 'ok' || sessionActionPending}
+              >
+                Choose script
+              </button>
+              <button
+                type="button"
+                className="game-page__danger-btn"
+                onClick={() => {
+                  setSessionActionError(null)
+                  setConfirmAction('endGame')
+                }}
+                disabled={sessionActionPending}
+              >
+                End game
+              </button>
+            </div>
           ) : (
             <button
               type="button"
@@ -800,6 +959,89 @@ export default function GamePage() {
                     onClick={() => void clearPlayerSeat(unseatModal.userId)}
                   >
                     {unseatPending ? 'Removing…' : 'Remove from seat'}
+                  </button>
+                </div>
+              </>
+            )}
+          </dialog>
+
+          <dialog
+            ref={scriptPickerDialogRef}
+            className="game-page__assign-dialog"
+            onClose={() => {
+              setScriptPickerOpen(false)
+              setScriptPatchError(null)
+              setScriptSearchError(null)
+            }}
+            aria-labelledby="script-picker-title"
+          >
+            {scriptPickerOpen && (
+              <>
+                <h2 id="script-picker-title" className="game-page__assign-dialog-title">
+                  Choose script
+                </h2>
+                <p className="game-page__assign-dialog-hint">
+                  Search by name, then select a script for this game.
+                </p>
+                <label className="game-page__field game-page__script-picker-field">
+                  <span className="game-page__field-label">Search</span>
+                  <input
+                    type="search"
+                    className="game-page__script-picker-search"
+                    value={scriptSearchInput}
+                    onChange={(e) => setScriptSearchInput(e.target.value)}
+                    autoComplete="off"
+                    maxLength={200}
+                    placeholder="Script name…"
+                  />
+                </label>
+                {scriptPatchError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {scriptPatchError}
+                  </p>
+                )}
+                {scriptSearchError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {scriptSearchError}
+                  </p>
+                )}
+                {scriptSearchLoading && (
+                  <p className="game-page__assign-dialog-hint">Loading scripts…</p>
+                )}
+                <ul className="game-page__assign-dialog-list">
+                  {scriptSearchResults.map((s) => {
+                    const sid = s.id
+                    const name = s.name ?? 'Script'
+                    return (
+                      <li key={sid}>
+                        <button
+                          type="button"
+                          className="game-page__assign-dialog-player"
+                          disabled={scriptPatchPending}
+                          onClick={() => void applyGameScript(sid)}
+                        >
+                          <span className="game-page__assign-dialog-player-name">{name}</span>
+                          {s.author && (
+                            <span className="game-page__assign-dialog-player-meta">by {s.author}</span>
+                          )}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+                {!scriptSearchLoading && scriptSearchResults.length === 0 && !scriptSearchError && (
+                  <p className="game-page__assign-dialog-empty">
+                    {scriptSearchInput.trim() ? 'No scripts match that search.' : 'No scripts returned.'}
+                  </p>
+                )}
+                <div className="game-page__assign-dialog-actions">
+                  <button
+                    type="button"
+                    className="game-page__confirm-cancel"
+                    onClick={() => setScriptPickerOpen(false)}
+                    disabled={scriptPatchPending}
+                  >
+                    Cancel
                   </button>
                 </div>
               </>
