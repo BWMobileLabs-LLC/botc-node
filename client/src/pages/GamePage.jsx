@@ -20,6 +20,55 @@ async function readErrorMessage(res) {
   }
 }
 
+function formatGameStatus(status) {
+  if (status == null || status === '') return '—'
+  const s = String(status)
+  if (s === 'lobby') return 'Lobby'
+  if (s === 'in_progress') return 'In progress'
+  return s.replace(/_/g, ' ')
+}
+
+function buildSeatSlots(players) {
+  const list = Array.isArray(players) ? players : []
+  const n = list.length
+  if (n === 0) return []
+
+  const bySeat = new Map()
+  for (const p of list) {
+    const sn = Number(p.seat)
+    if (Number.isFinite(sn) && sn > 0) {
+      bySeat.set(sn, p)
+    }
+  }
+
+  return Array.from({ length: n }, (_, i) => {
+    const seatNum = i + 1
+    return { seatNum, player: bySeat.get(seatNum) ?? null }
+  })
+}
+
+function playerDisplayLabel(p, seatNum) {
+  const fromName = p.display_name?.trim() || p.username?.trim()
+  if (fromName) return fromName
+  return `Seat ${seatNum}`
+}
+
+function seatInitials(label) {
+  const parts = label.trim().split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase().slice(0, 2)
+  }
+  return label.trim().slice(0, 2).toUpperCase() || '?'
+}
+
+function playerSeatInitials(p, seatNum) {
+  const fromName = p.display_name?.trim() || p.username?.trim()
+  if (fromName) return seatInitials(fromName)
+  const u = p.username?.trim()
+  if (u) return seatInitials(u)
+  return String(seatNum)
+}
+
 export default function GamePage() {
   const { isAuthenticated, authorizedFetch } = useAuth()
   const [session, setSession] = useState(() => loadGameSession())
@@ -317,86 +366,113 @@ export default function GamePage() {
         ? gameSnapshot.game.is_storyteller
         : session.isStoryteller
 
+    const seatSlots =
+      gameFetchStatus === 'ok' && gameSnapshot?.players
+        ? buildSeatSlots(gameSnapshot.players)
+        : []
+    const seatCount = seatSlots.length
+
     return (
       <div className="page game-page">
         <h1 className="page__title">Game</h1>
         <section className="game-page__in-game" aria-labelledby="game-invite-heading">
-          <p id="game-invite-heading" className="game-page__in-game-label">
-            {resolvedIsStoryteller ? 'You are hosting this game.' : 'You are in this game.'}
-          </p>
-          <p className="game-page__invite-hint">
-            {resolvedIsStoryteller
-              ? 'Share this invite code with players:'
-              : 'Invite code for this game:'}
-          </p>
-          <div className="game-page__invite-row">
-            <output className="game-page__invite-code" aria-live="polite">
-              {session.inviteCode}
-            </output>
-            <button type="button" className="game-page__copy-btn" onClick={onCopyInvite}>
-              {copyOk ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-
-          <div className="game-page__snapshot" aria-live="polite">
-            {gameFetchStatus === 'loading' && (
-              <p className="game-page__snapshot-status">Loading game…</p>
-            )}
-            {gameFetchStatus === 'error' && gameFetchError && (
-              <p className="game-page__snapshot-status game-page__snapshot-status--error" role="alert">
-                {gameFetchError}
+          <div className="game-page__header-row">
+            <div className="game-page__invite-block">
+              <p id="game-invite-heading" className="game-page__in-game-label">
+                {resolvedIsStoryteller ? 'You are hosting this game.' : 'You are in this game.'}
               </p>
-            )}
-            {gameFetchStatus === 'ok' && gameSnapshot?.game && (
-              <>
-                <h2 className="game-page__snapshot-title">Current game</h2>
-                <dl className="game-page__snapshot-dl">
-                  <div className="game-page__snapshot-row">
+              <p className="game-page__invite-hint">
+                {resolvedIsStoryteller
+                  ? 'Share this invite code with players:'
+                  : 'Invite code for this game:'}
+              </p>
+              <div className="game-page__invite-row">
+                <output className="game-page__invite-code" aria-live="polite">
+                  {session.inviteCode}
+                </output>
+                <button type="button" className="game-page__copy-btn" onClick={onCopyInvite}>
+                  {copyOk ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            <div className="game-page__game-meta" aria-live="polite">
+              {gameFetchStatus === 'loading' && (
+                <p className="game-page__meta-status">Loading game…</p>
+              )}
+              {gameFetchStatus === 'error' && gameFetchError && (
+                <p className="game-page__meta-status game-page__meta-status--error" role="alert">
+                  {gameFetchError}
+                </p>
+              )}
+              {gameFetchStatus === 'ok' && gameSnapshot?.game && (
+                <dl className="game-page__meta-dl">
+                  <div className="game-page__meta-row">
+                    <dt>Current game</dt>
+                    <dd>{formatGameStatus(gameSnapshot.game.status)}</dd>
+                  </div>
+                  <div className="game-page__meta-row">
+                    <dt>Phase</dt>
+                    <dd>
+                      {String(gameSnapshot.game.day ?? '').trim() ? gameSnapshot.game.day : '—'}
+                    </dd>
+                  </div>
+                  <div className="game-page__meta-row">
                     <dt>Name</dt>
                     <dd>{gameSnapshot.game.name ?? '—'}</dd>
                   </div>
-                  <div className="game-page__snapshot-row">
-                    <dt>Status</dt>
-                    <dd>{gameSnapshot.game.status ?? '—'}</dd>
-                  </div>
-                  <div className="game-page__snapshot-row">
-                    <dt>Phase</dt>
-                    <dd>{gameSnapshot.game.day ?? '—'}</dd>
-                  </div>
-                  <div className="game-page__snapshot-row">
+                  <div className="game-page__meta-row">
                     <dt>Storyteller</dt>
                     <dd>{gameSnapshot.game.storyteller ?? '—'}</dd>
                   </div>
                 </dl>
-                {Array.isArray(gameSnapshot.players) && gameSnapshot.players.length > 0 && (
-                  <div className="game-page__players">
-                    <h3 className="game-page__players-title">Players ({gameSnapshot.players.length})</h3>
-                    <ul className="game-page__players-list">
-                      {gameSnapshot.players.map((p, i) => {
-                        const label =
-                          p.display_name?.trim() ||
-                          p.username?.trim() ||
-                          (p.seat != null ? `Seat ${p.seat}` : `Player ${i + 1}`)
-                        const meta =
-                          p.seat != null && (p.display_name?.trim() || p.username?.trim())
-                            ? ` · seat ${p.seat}`
-                            : ''
-                        const key = p.id ?? `${p.username ?? ''}-${p.seat ?? ''}-${i}`
-                        return (
-                          <li key={key} className="game-page__players-item">
-                            {label}
-                            {meta}
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  </div>
-                )}
-                {Array.isArray(gameSnapshot.players) && gameSnapshot.players.length === 0 && (
-                  <p className="game-page__snapshot-foot">No players have joined yet.</p>
-                )}
-                <p className="game-page__snapshot-foot">Refresh the page to load the latest state.</p>
-              </>
+              )}
+            </div>
+          </div>
+
+          <div className="game-page__seat-stage" aria-label="Player seats">
+            {gameFetchStatus === 'ok' && gameSnapshot?.game && seatCount > 0 && (
+              <div
+                className="game-page__seat-ring"
+                role="list"
+                style={{ '--seat-n': seatCount }}
+              >
+                {seatSlots.map(({ seatNum, player }, i) => {
+                  const key = `seat-${seatNum}`
+                  const aria =
+                    player == null
+                      ? `Seat ${seatNum}, empty`
+                      : `Seat ${seatNum}, ${playerDisplayLabel(player, seatNum)}`
+                  return (
+                    <div
+                      key={key}
+                      className={`game-page__seat${player ? ' game-page__seat--taken' : ' game-page__seat--empty'}`}
+                      style={{ '--seat-i': i }}
+                      role="listitem"
+                      aria-label={aria}
+                    >
+                      {player ? (
+                        <>
+                          <div className="game-page__seat-icon" aria-hidden="true">
+                            <span className="game-page__seat-initials">
+                              {playerSeatInitials(player, seatNum)}
+                            </span>
+                          </div>
+                          <span className="game-page__seat-label">
+                            {playerDisplayLabel(player, seatNum)}
+                          </span>
+                        </>
+                      ) : (
+                        <div className="game-page__seat-icon game-page__seat-icon--empty" aria-hidden="true">
+                          <span className="game-page__seat-empty-label">
+                            Seat {seatNum}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             )}
           </div>
 
