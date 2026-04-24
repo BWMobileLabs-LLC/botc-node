@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createAuthorizedFetch } from './authorizedFetch.js'
 import { AuthContext } from './authContext.js'
+import { clearGameSession } from '../game/gameSession.js'
 import { clearPersistedSession, loadPersistedSession, persistSession } from './session.js'
 
 export function AuthProvider({ children }) {
@@ -27,6 +28,7 @@ export function AuthProvider({ children }) {
     setAccessToken(null)
     setUser(null)
     clearPersistedSession()
+    clearGameSession()
   }, [])
 
   /** Repair sessions that have an access token but no usable user (e.g. after refresh before server returned `user`). */

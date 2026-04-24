@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import '../App.css'
 import './GamePage.css'
@@ -32,10 +32,66 @@ export default function GamePage() {
   const [joinPending, setJoinPending] = useState(false)
   const [leavePending, setLeavePending] = useState(false)
   const [copyOk, setCopyOk] = useState(false)
+  const [gameSnapshot, setGameSnapshot] = useState(null)
+  const [gameFetchStatus, setGameFetchStatus] = useState('idle')
+  const [gameFetchError, setGameFetchError] = useState(null)
 
   const refreshSession = useCallback(() => {
     setSession(loadGameSession())
   }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setSession(null)
+      return
+    }
+    setSession(loadGameSession())
+  }, [isAuthenticated])
+
+  useEffect(() => {
+    if (!isAuthenticated || !session?.gameId) {
+      setGameSnapshot(null)
+      setGameFetchStatus('idle')
+      setGameFetchError(null)
+      return
+    }
+
+    let cancelled = false
+    setGameFetchStatus('loading')
+    setGameFetchError(null)
+
+    authorizedFetch(`/api/games/${encodeURIComponent(session.gameId)}`)
+      .then(async (res) => {
+        if (cancelled) return
+        if (!res.ok) {
+          setGameFetchError(await readErrorMessage(res))
+          setGameFetchStatus('error')
+          setGameSnapshot(null)
+          return
+        }
+        const data = await res.json()
+        if (cancelled) return
+        if (!data?.game) {
+          setGameFetchError('Unexpected response from server.')
+          setGameFetchStatus('error')
+          setGameSnapshot(null)
+          return
+        }
+        setGameSnapshot(data)
+        setGameFetchStatus('ok')
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setGameFetchError('Could not load game.')
+          setGameFetchStatus('error')
+          setGameSnapshot(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthenticated, session?.gameId, authorizedFetch])
 
   const onCreate = async (e) => {
     e.preventDefault()
@@ -187,7 +243,69 @@ export default function GamePage() {
               {copyOk ? 'Copied' : 'Copy'}
             </button>
           </div>
-          <p className="game-page__game-state-note">Game details will appear here later.</p>
+
+          <div className="game-page__snapshot" aria-live="polite">
+            {gameFetchStatus === 'loading' && (
+              <p className="game-page__snapshot-status">Loading game…</p>
+            )}
+            {gameFetchStatus === 'error' && gameFetchError && (
+              <p className="game-page__snapshot-status game-page__snapshot-status--error" role="alert">
+                {gameFetchError}
+              </p>
+            )}
+            {gameFetchStatus === 'ok' && gameSnapshot?.game && (
+              <>
+                <h2 className="game-page__snapshot-title">Current game</h2>
+                <dl className="game-page__snapshot-dl">
+                  <div className="game-page__snapshot-row">
+                    <dt>Name</dt>
+                    <dd>{gameSnapshot.game.name ?? '—'}</dd>
+                  </div>
+                  <div className="game-page__snapshot-row">
+                    <dt>Status</dt>
+                    <dd>{gameSnapshot.game.status ?? '—'}</dd>
+                  </div>
+                  <div className="game-page__snapshot-row">
+                    <dt>Phase</dt>
+                    <dd>{gameSnapshot.game.day ?? '—'}</dd>
+                  </div>
+                  <div className="game-page__snapshot-row">
+                    <dt>Storyteller</dt>
+                    <dd>{gameSnapshot.game.storyteller ?? '—'}</dd>
+                  </div>
+                </dl>
+                {Array.isArray(gameSnapshot.players) && gameSnapshot.players.length > 0 && (
+                  <div className="game-page__players">
+                    <h3 className="game-page__players-title">Players ({gameSnapshot.players.length})</h3>
+                    <ul className="game-page__players-list">
+                      {gameSnapshot.players.map((p, i) => {
+                        const label =
+                          p.display_name?.trim() ||
+                          p.username?.trim() ||
+                          (p.seat != null ? `Seat ${p.seat}` : `Player ${i + 1}`)
+                        const meta =
+                          p.seat != null && (p.display_name?.trim() || p.username?.trim())
+                            ? ` · seat ${p.seat}`
+                            : ''
+                        const key = p.id ?? `${p.username ?? ''}-${p.seat ?? ''}-${i}`
+                        return (
+                          <li key={key} className="game-page__players-item">
+                            {label}
+                            {meta}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray(gameSnapshot.players) && gameSnapshot.players.length === 0 && (
+                  <p className="game-page__snapshot-foot">No players have joined yet.</p>
+                )}
+                <p className="game-page__snapshot-foot">Refresh the page to load the latest state.</p>
+              </>
+            )}
+          </div>
+
           <button
             type="button"
             className="game-page__leave-btn"
