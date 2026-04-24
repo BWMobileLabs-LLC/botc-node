@@ -346,6 +346,17 @@ button.game-page__seat.game-page__seat--assignable:hover .game-page__seat-icon--
   background: color-mix(in srgb, var(--layout-focus) 10%, transparent);
 }
 
+button.game-page__seat.game-page__seat--assignable.game-page__seat--taken:hover:not(:disabled)
+  .game-page__seat-icon {
+  border-color: var(--layout-focus);
+  background: color-mix(in srgb, var(--layout-focus) 8%, transparent);
+}
+
+button.game-page__seat:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 button.game-page__seat:focus-visible {
   outline: 2px solid var(--layout-focus);
   outline-offset: 3px;
@@ -633,4 +644,8 @@ button.game-page__seat:focus-visible {
   margin-top: 1rem;
   display: flex;
   justify-content: flex-end;
+}
+
+.game-page__assign-dialog-actions--split {
+  justify-content: space-between;
 }

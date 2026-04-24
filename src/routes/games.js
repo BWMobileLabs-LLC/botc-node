@@ -217,20 +217,26 @@ router.patch("/:gameID/player/:playerID", authMiddleware, async (req, res) => {
 			return res.status(404).json({ message: 'Player not found' });
 		}
 
+		const update = {
+			character_id: character_id ?? player.character_id,
+			is_alive: is_alive ?? player.is_alive,
+			has_ghost_vote: has_ghost_vote ?? player.has_ghost_vote,
+			vote_used: vote_used ?? player.vote_used,
+			notes: notes ?? player.notes,
+			updated_at: db.fn.now(),
+		};
+		if (Object.prototype.hasOwnProperty.call(req.body, 'seat_order')) {
+			update.seat_order = seat_order;
+		} else {
+			update.seat_order = player.seat_order;
+		}
+
 		await db('game_players')
 			.where({
 				'game_id': gameID,
 				'user_id': playerID
 			})
-			.update({
-				character_id: character_id ?? player.character_id,
-				seat_order: seat_order ?? player.seat_order,
-				is_alive: is_alive ?? player.is_alive,
-				has_ghost_vote: has_ghost_vote ?? player.has_ghost_vote,
-				vote_used: vote_used ?? player.vote_used,
-				notes: notes ?? player.notes,
-				updated_at: db.fn.now()
-			});
+			.update(update);
 
 		return res.status(200).json({ message: 'Player updated' });
 

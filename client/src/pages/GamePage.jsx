@@ -54,23 +54,6 @@ function playerDisplayLabel(p, seatNum) {
   return `Seat ${seatNum}`
 }
 
-function seatInitials(label) {
-  const parts = label.trim().split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase().slice(0, 2)
-  }
-  return label.trim().slice(0, 2).toUpperCase() || '?'
-}
-
-function playerSeatInitials(p, seatNum) {
-  if (p == null) return String(seatNum)
-  const fromName = p.display_name?.trim() || p.username?.trim()
-  if (fromName) return seatInitials(fromName)
-  const u = p.username?.trim()
-  if (u) return seatInitials(u)
-  return String(seatNum)
-}
-
 function rosterPlayerLabel(p) {
   if (p == null) return 'Player'
   return p.display_name?.trim() || p.username?.trim() || 'Player'
@@ -98,6 +81,10 @@ export default function GamePage() {
   const [assignSeatPending, setAssignSeatPending] = useState(false)
   const [assignSeatError, setAssignSeatError] = useState(null)
   const assignSeatDialogRef = useRef(null)
+  const [unseatModal, setUnseatModal] = useState(null)
+  const [unseatPending, setUnseatPending] = useState(false)
+  const [unseatError, setUnseatError] = useState(null)
+  const unseatDialogRef = useRef(null)
 
   const refreshSession = useCallback(() => {
     setSession(loadGameSession())
@@ -122,6 +109,16 @@ export default function GamePage() {
       el.close()
     }
   }, [assignSeatModal])
+
+  useLayoutEffect(() => {
+    const el = unseatDialogRef.current
+    if (!el) return
+    if (unseatModal) {
+      if (!el.open) el.showModal()
+    } else if (el.open) {
+      el.close()
+    }
+  }, [unseatModal])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -399,6 +396,40 @@ export default function GamePage() {
     [session?.gameId, authorizedFetch]
   )
 
+  const clearPlayerSeat = useCallback(
+    async (userId) => {
+      const gid = session?.gameId
+      if (!gid || userId == null) return
+      setUnseatError(null)
+      setUnseatPending(true)
+      try {
+        const res = await authorizedFetch(
+          `/api/games/${encodeURIComponent(gid)}/player/${encodeURIComponent(userId)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ seat_order: null }),
+          }
+        )
+        if (!res.ok) {
+          setUnseatError(await readErrorMessage(res))
+          return
+        }
+        const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+        if (fresh.ok) {
+          const data = await fresh.json()
+          if (data?.game) setGameSnapshot(data)
+        }
+        setUnseatModal(null)
+      } catch {
+        setUnseatError('Could not clear this seat.')
+      } finally {
+        setUnseatPending(false)
+      }
+    },
+    [session?.gameId, authorizedFetch]
+  )
+
   if (!isAuthenticated) {
     return (
       <div className="page game-page">
@@ -503,16 +534,12 @@ export default function GamePage() {
                   const key = `seat-${seatNum}`
                   const ariaEmpty = `Seat ${seatNum}, empty`
                   const ariaTaken = `Seat ${seatNum}, ${playerDisplayLabel(player, seatNum)}`
-                  const seatClass = `game-page__seat${player ? ' game-page__seat--taken' : ' game-page__seat--empty'}${resolvedIsStoryteller && !player ? ' game-page__seat--assignable' : ''}`
+                  const seatClass = `game-page__seat${player ? ' game-page__seat--taken' : ' game-page__seat--empty'}${resolvedIsStoryteller ? ' game-page__seat--assignable' : ''}`
                   const seatStyle = { '--seat-i': i }
 
                   const inner = player ? (
                     <>
-                      <div className="game-page__seat-icon" aria-hidden="true">
-                        <span className="game-page__seat-initials">
-                          {playerSeatInitials(player, seatNum)}
-                        </span>
-                      </div>
+                      <div className="game-page__seat-icon" aria-hidden="true" />
                       <span className="game-page__seat-label">
                         {playerDisplayLabel(player, seatNum)}
                       </span>
@@ -523,17 +550,39 @@ export default function GamePage() {
                     </div>
                   )
 
-                  if (resolvedIsStoryteller && !player) {
+                  if (resolvedIsStoryteller) {
+                    const filledWithoutUser =
+                      player &&
+                      (player.user_id == null || String(player.user_id).trim() === '')
                     return (
                       <button
                         key={key}
                         type="button"
                         className={seatClass}
                         style={seatStyle}
-                        aria-label={`${ariaEmpty}. Choose player to assign.`}
+                        disabled={Boolean(filledWithoutUser)}
+                        aria-label={
+                          player
+                            ? filledWithoutUser
+                              ? ariaTaken
+                              : `${ariaTaken}. Click to remove from this seat.`
+                            : `${ariaEmpty}. Choose player to assign.`
+                        }
                         onClick={() => {
                           setAssignSeatError(null)
-                          setAssignSeatModal({ seatNum })
+                          if (!player) {
+                            setUnseatModal(null)
+                            setAssignSeatModal({ seatNum })
+                            return
+                          }
+                          if (filledWithoutUser) return
+                          setAssignSeatModal(null)
+                          setUnseatError(null)
+                          setUnseatModal({
+                            seatNum,
+                            userId: player.user_id,
+                            label: playerDisplayLabel(player, seatNum),
+                          })
                         }}
                       >
                         {inner}
@@ -707,6 +756,50 @@ export default function GamePage() {
                     disabled={assignSeatPending}
                   >
                     Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </dialog>
+
+          <dialog
+            ref={unseatDialogRef}
+            className="game-page__assign-dialog"
+            onClose={() => {
+              setUnseatModal(null)
+              setUnseatError(null)
+            }}
+            aria-labelledby="unseat-seat-title"
+          >
+            {unseatModal && (
+              <>
+                <h2 id="unseat-seat-title" className="game-page__assign-dialog-title">
+                  Remove from seat {unseatModal.seatNum}?
+                </h2>
+                <p className="game-page__assign-dialog-hint">
+                  <strong>{unseatModal.label}</strong> will leave this seat but stay in the game.
+                </p>
+                {unseatError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {unseatError}
+                  </p>
+                )}
+                <div className="game-page__assign-dialog-actions game-page__assign-dialog-actions--split">
+                  <button
+                    type="button"
+                    className="game-page__confirm-cancel"
+                    onClick={() => setUnseatModal(null)}
+                    disabled={unseatPending}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="game-page__confirm-danger"
+                    disabled={unseatPending}
+                    onClick={() => void clearPlayerSeat(unseatModal.userId)}
+                  >
+                    {unseatPending ? 'Removing…' : 'Remove from seat'}
                   </button>
                 </div>
               </>
