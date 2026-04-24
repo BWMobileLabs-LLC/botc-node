@@ -245,17 +245,18 @@
 
 .game-page__seat-stage {
   margin-top: 2rem;
-  min-height: min(88vw, 30rem);
+  min-height: min(94vw, 34rem);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .game-page__seat-ring {
-  --orbit: min(42vw, 15.5rem);
+  /* Larger orbit = wider spacing between seats on the ring */
+  --orbit: min(48vw, 18.25rem);
   position: relative;
-  width: min(94vw, 38rem);
-  height: min(94vw, 38rem);
+  width: min(98vw, 42rem);
+  height: min(98vw, 42rem);
   margin: 0 auto;
   --seat-n: 1;
 }
