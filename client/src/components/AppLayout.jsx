@@ -74,6 +74,15 @@ export default function AppLayout() {
         <aside id="app-sidebar" className="layout__sidebar" aria-label="Main navigation">
           <nav className="layout__nav">
             <NavLink
+              to="/game"
+              onClick={closeNavIfNarrow}
+              className={({ isActive }) =>
+                `layout__nav-link${isActive ? ' layout__nav-link--active' : ''}`
+              }
+            >
+              Game
+            </NavLink>
+            <NavLink
               to="/characters"
               onClick={closeNavIfNarrow}
               className={({ isActive }) =>
