@@ -39,6 +39,48 @@ const createGameWithUniqueInvite = async (knex, { storytellerId, gameName, scrip
 
 // Routes
 
+// Active game for this user (storyteller row and/or game_players row)
+router.get('/current_game', authMiddleware, async (req, res) => {
+	const user_id = req.user_id;
+	try {
+		const st_game = await db('games')
+			.select('id', 'invite_code')
+			.where('storyteller_id', user_id)
+			.whereIn('status', ['lobby', 'in_progress'])
+			.orderBy('updated_at', 'desc')
+			.first();
+
+		if (st_game) {
+			return res.status(200).json({
+				game_id: st_game.id,
+				invite_code: st_game.invite_code,
+				is_storyteller: true,
+			});
+		}
+
+		const player_game = await db('game_players as gp')
+			.select('gp.game_id', 'g.invite_code')
+			.join('games as g', 'g.id', 'gp.game_id')
+			.where('gp.user_id', user_id)
+			.whereIn('g.status', ['lobby', 'in_progress'])
+			.orderBy('g.updated_at', 'desc')
+			.first();
+
+		if (player_game) {
+			return res.status(200).json({
+				game_id: player_game.game_id,
+				invite_code: player_game.invite_code,
+				is_storyteller: false,
+			});
+		}
+
+		return res.status(200).json({ game_id: null, invite_code: null, is_storyteller: null });
+	} catch (err) {
+		console.log(err);
+		return res.status(500).json({ message: 'Couldn\'t check current game status' });
+	}
+});
+
 // Create a game (return an invite code)
 router.post('/', authMiddleware, async (req, res) => {
 	const user_id = req.user_id;
@@ -248,7 +290,8 @@ router.get('/:id', authMiddleware, async (req, res) => {
 					status: game.status,
 					day: `${game.phase} ${game.day_number}`,
 					storyteller: storyteller.username,
-					script_id: game.active_script_id
+					script_id: game.active_script_id,
+					is_storyteller: true
 				},
 				players: players.map((p) => ({
 					...p,
@@ -262,7 +305,8 @@ router.get('/:id', authMiddleware, async (req, res) => {
 					status: game.status,
 					day: `${game.phase} ${game.day_number}`,
 					storyteller: storyteller.username,
-					script_id: game.active_script_id
+					script_id: game.active_script_id,
+					is_storyteller: false
 				},
 				players: players.map(p => ({
 					username: p.username,
