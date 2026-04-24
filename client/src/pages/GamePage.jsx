@@ -29,7 +29,7 @@ function formatGameStatus(status) {
 }
 
 function buildSeatSlots(players) {
-  const list = Array.isArray(players) ? players : []
+  const list = (Array.isArray(players) ? players : []).filter((p) => p != null)
   const n = list.length
   if (n === 0) return []
 
@@ -48,6 +48,7 @@ function buildSeatSlots(players) {
 }
 
 function playerDisplayLabel(p, seatNum) {
+  if (p == null) return `Seat ${seatNum}`
   const fromName = p.display_name?.trim() || p.username?.trim()
   if (fromName) return fromName
   return `Seat ${seatNum}`
@@ -62,11 +63,17 @@ function seatInitials(label) {
 }
 
 function playerSeatInitials(p, seatNum) {
+  if (p == null) return String(seatNum)
   const fromName = p.display_name?.trim() || p.username?.trim()
   if (fromName) return seatInitials(fromName)
   const u = p.username?.trim()
   if (u) return seatInitials(u)
   return String(seatNum)
+}
+
+function rosterPlayerLabel(p) {
+  if (p == null) return 'Player'
+  return p.display_name?.trim() || p.username?.trim() || 'Player'
 }
 
 export default function GamePage() {
@@ -87,6 +94,10 @@ export default function GamePage() {
   const [gameSnapshot, setGameSnapshot] = useState(null)
   const [gameFetchStatus, setGameFetchStatus] = useState('idle')
   const [gameFetchError, setGameFetchError] = useState(null)
+  const [assignSeatModal, setAssignSeatModal] = useState(null)
+  const [assignSeatPending, setAssignSeatPending] = useState(false)
+  const [assignSeatError, setAssignSeatError] = useState(null)
+  const assignSeatDialogRef = useRef(null)
 
   const refreshSession = useCallback(() => {
     setSession(loadGameSession())
@@ -101,6 +112,16 @@ export default function GamePage() {
       el.close()
     }
   }, [confirmAction])
+
+  useLayoutEffect(() => {
+    const el = assignSeatDialogRef.current
+    if (!el) return
+    if (assignSeatModal) {
+      if (!el.open) el.showModal()
+    } else if (el.open) {
+      el.close()
+    }
+  }, [assignSeatModal])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -344,6 +365,40 @@ export default function GamePage() {
     }
   }
 
+  const assignPlayerToSeat = useCallback(
+    async (userId, seatNum) => {
+      const gid = session?.gameId
+      if (!gid || seatNum == null) return
+      setAssignSeatError(null)
+      setAssignSeatPending(true)
+      try {
+        const res = await authorizedFetch(
+          `/api/games/${encodeURIComponent(gid)}/player/${encodeURIComponent(userId)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ seat_order: seatNum }),
+          }
+        )
+        if (!res.ok) {
+          setAssignSeatError(await readErrorMessage(res))
+          return
+        }
+        const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+        if (fresh.ok) {
+          const data = await fresh.json()
+          if (data?.game) setGameSnapshot(data)
+        }
+        setAssignSeatModal(null)
+      } catch {
+        setAssignSeatError('Could not update seat.')
+      } finally {
+        setAssignSeatPending(false)
+      }
+    },
+    [session?.gameId, authorizedFetch]
+  )
+
   if (!isAuthenticated) {
     return (
       <div className="page game-page">
@@ -371,6 +426,13 @@ export default function GamePage() {
         ? buildSeatSlots(gameSnapshot.players)
         : []
     const seatCount = seatSlots.length
+
+    const rosterForAssign =
+      resolvedIsStoryteller && Array.isArray(gameSnapshot?.players)
+        ? [...gameSnapshot.players]
+            .filter((p) => p != null && p.user_id != null && String(p.user_id).trim() !== '')
+            .sort((a, b) => rosterPlayerLabel(a).localeCompare(rosterPlayerLabel(b), undefined, { sensitivity: 'base' }))
+        : []
 
     return (
       <div className="page game-page">
@@ -434,41 +496,59 @@ export default function GamePage() {
             {gameFetchStatus === 'ok' && gameSnapshot?.game && seatCount > 0 && (
               <div
                 className="game-page__seat-ring"
-                role="list"
+                role="group"
                 style={{ '--seat-n': seatCount }}
               >
                 {seatSlots.map(({ seatNum, player }, i) => {
                   const key = `seat-${seatNum}`
-                  const aria =
-                    player == null
-                      ? `Seat ${seatNum}, empty`
-                      : `Seat ${seatNum}, ${playerDisplayLabel(player, seatNum)}`
+                  const ariaEmpty = `Seat ${seatNum}, empty`
+                  const ariaTaken = `Seat ${seatNum}, ${playerDisplayLabel(player, seatNum)}`
+                  const seatClass = `game-page__seat${player ? ' game-page__seat--taken' : ' game-page__seat--empty'}${resolvedIsStoryteller && !player ? ' game-page__seat--assignable' : ''}`
+                  const seatStyle = { '--seat-i': i }
+
+                  const inner = player ? (
+                    <>
+                      <div className="game-page__seat-icon" aria-hidden="true">
+                        <span className="game-page__seat-initials">
+                          {playerSeatInitials(player, seatNum)}
+                        </span>
+                      </div>
+                      <span className="game-page__seat-label">
+                        {playerDisplayLabel(player, seatNum)}
+                      </span>
+                    </>
+                  ) : (
+                    <div className="game-page__seat-icon game-page__seat-icon--empty" aria-hidden="true">
+                      <span className="game-page__seat-empty-label">Seat {seatNum}</span>
+                    </div>
+                  )
+
+                  if (resolvedIsStoryteller && !player) {
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className={seatClass}
+                        style={seatStyle}
+                        aria-label={`${ariaEmpty}. Choose player to assign.`}
+                        onClick={() => {
+                          setAssignSeatError(null)
+                          setAssignSeatModal({ seatNum })
+                        }}
+                      >
+                        {inner}
+                      </button>
+                    )
+                  }
+
                   return (
                     <div
                       key={key}
-                      className={`game-page__seat${player ? ' game-page__seat--taken' : ' game-page__seat--empty'}`}
-                      style={{ '--seat-i': i }}
-                      role="listitem"
-                      aria-label={aria}
+                      className={seatClass}
+                      style={seatStyle}
+                      aria-label={player ? ariaTaken : ariaEmpty}
                     >
-                      {player ? (
-                        <>
-                          <div className="game-page__seat-icon" aria-hidden="true">
-                            <span className="game-page__seat-initials">
-                              {playerSeatInitials(player, seatNum)}
-                            </span>
-                          </div>
-                          <span className="game-page__seat-label">
-                            {playerDisplayLabel(player, seatNum)}
-                          </span>
-                        </>
-                      ) : (
-                        <div className="game-page__seat-icon game-page__seat-icon--empty" aria-hidden="true">
-                          <span className="game-page__seat-empty-label">
-                            Seat {seatNum}
-                          </span>
-                        </div>
-                      )}
+                      {inner}
                     </div>
                   )
                 })}
@@ -566,6 +646,70 @@ export default function GamePage() {
                       : 'Leave game'}
                 </button>
               </div>
+            )}
+          </dialog>
+
+          <dialog
+            ref={assignSeatDialogRef}
+            className="game-page__assign-dialog"
+            onClose={() => {
+              setAssignSeatModal(null)
+              setAssignSeatError(null)
+            }}
+            aria-labelledby="assign-seat-title"
+          >
+            {assignSeatModal && (
+              <>
+                <h2 id="assign-seat-title" className="game-page__assign-dialog-title">
+                  Assign seat {assignSeatModal.seatNum}
+                </h2>
+                <p className="game-page__assign-dialog-hint">Choose a player for this seat.</p>
+                {assignSeatError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {assignSeatError}
+                  </p>
+                )}
+                <ul className="game-page__assign-dialog-list">
+                  {rosterForAssign.map((p) => {
+                    const uid = p.user_id
+                    const label = rosterPlayerLabel(p)
+                    const seatHint =
+                      p.seat != null &&
+                      Number.isFinite(Number(p.seat)) &&
+                      Number(p.seat) > 0
+                        ? `Seat ${p.seat}`
+                        : null
+                    return (
+                      <li key={uid}>
+                        <button
+                          type="button"
+                          className="game-page__assign-dialog-player"
+                          disabled={assignSeatPending}
+                          onClick={() => void assignPlayerToSeat(uid, assignSeatModal.seatNum)}
+                        >
+                          <span className="game-page__assign-dialog-player-name">{label}</span>
+                          {seatHint && (
+                            <span className="game-page__assign-dialog-player-meta">{seatHint}</span>
+                          )}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+                {rosterForAssign.length === 0 && (
+                  <p className="game-page__assign-dialog-empty">No players in this game yet.</p>
+                )}
+                <div className="game-page__assign-dialog-actions">
+                  <button
+                    type="button"
+                    className="game-page__confirm-cancel"
+                    onClick={() => setAssignSeatModal(null)}
+                    disabled={assignSeatPending}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
             )}
           </dialog>
         </section>

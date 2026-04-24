@@ -258,7 +258,18 @@ router.get('/:id', authMiddleware, async (req, res) => {
 			.first();
 
 		const players = await db('game_players as gp')
-			.select('gp.id', 'username', 'display_name', 'seat_order as seat', 'is_alive', 'has_ghost_vote', 'vote_used', 'notes', 'c.name as character_name')
+			.select(
+				'gp.id',
+				'gp.user_id',
+				'username',
+				'display_name',
+				'seat_order as seat',
+				'is_alive',
+				'has_ghost_vote',
+				'vote_used',
+				'notes',
+				'c.name as character_name'
+			)
 			.leftJoin('users as u', 'u.id', 'gp.user_id')
 			.leftJoin('characters as c', 'gp.character_id', 'c.id')
 			.where('game_id', id)

@@ -1,3 +1,10 @@
+.page.game-page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: min(48rem, 100%);
+  margin-inline: auto;
+}
+
 .game-page__lead {
   margin: 0.75rem 0 0;
   color: var(--muted);
@@ -238,17 +245,17 @@
 
 .game-page__seat-stage {
   margin-top: 2rem;
-  min-height: min(72vw, 22rem);
+  min-height: min(88vw, 30rem);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .game-page__seat-ring {
-  --orbit: min(34vw, 11.25rem);
+  --orbit: min(42vw, 15.5rem);
   position: relative;
-  width: min(88vw, 28rem);
-  height: min(88vw, 28rem);
+  width: min(94vw, 38rem);
+  height: min(94vw, 38rem);
   margin: 0 auto;
   --seat-n: 1;
 }
@@ -260,8 +267,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  width: 5.5rem;
+  gap: 0.5rem;
+  width: clamp(7.5rem, 24vw, 11rem);
   /* Seat 1 (--seat-i: 0) at top; higher indices go clockwise. */
   transform: translate(-50%, -50%)
     rotate(calc(360deg * var(--seat-i) / var(--seat-n)))
@@ -270,16 +277,16 @@
 }
 
 .game-page__seat-icon {
-  width: 3.25rem;
-  height: 3.25rem;
+  width: clamp(5.25rem, 16vw, 8rem);
+  height: clamp(5.25rem, 16vw, 8rem);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.15rem;
+  padding: 0.35rem;
   text-align: center;
   background: var(--layout-sidebar-bg);
-  border: 2px solid var(--layout-border);
+  border: 3px solid var(--layout-border);
   box-sizing: border-box;
 }
 
@@ -290,7 +297,7 @@
 
 .game-page__seat-empty-label {
   display: block;
-  font-size: clamp(0.55rem, 1.65vw, 0.68rem);
+  font-size: clamp(0.72rem, 2.1vw, 1.05rem);
   font-weight: 600;
   line-height: 1.15;
   letter-spacing: 0.01em;
@@ -299,23 +306,49 @@
 }
 
 .game-page__seat-initials {
-  font-size: 0.95rem;
+  font-size: clamp(1.15rem, 3.8vw, 1.85rem);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--layout-focus);
 }
 
 .game-page__seat-label {
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   line-height: 1.25;
   text-align: center;
-  max-width: 6.5rem;
+  max-width: 10rem;
   word-break: break-word;
   color: var(--muted);
 }
 
 .game-page__seat--taken .game-page__seat-label {
   color: inherit;
+}
+
+button.game-page__seat {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+button.game-page__seat.game-page__seat--assignable {
+  cursor: pointer;
+}
+
+button.game-page__seat.game-page__seat--assignable:hover .game-page__seat-icon--empty {
+  border-color: var(--layout-focus);
+  background: color-mix(in srgb, var(--layout-focus) 10%, transparent);
+}
+
+button.game-page__seat:focus-visible {
+  outline: 2px solid var(--layout-focus);
+  outline-offset: 3px;
 }
 
 @media (max-width: 639px) {
@@ -503,4 +536,101 @@
 .game-page__confirm-danger:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+.game-page__assign-dialog {
+  max-width: min(26rem, calc(100vw - 2rem));
+  max-height: min(70vh, 32rem);
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--layout-border);
+  border-radius: 0.5rem;
+  background: var(--layout-header-bg);
+  color: inherit;
+}
+
+.game-page__assign-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.game-page__assign-dialog-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.game-page__assign-dialog-hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.game-page__assign-dialog-error {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: #b91c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .game-page__assign-dialog-error {
+    color: #fca5a5;
+  }
+}
+
+.game-page__assign-dialog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(48vh, 18rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.game-page__assign-dialog-player {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  padding: 0.55rem 0.65rem;
+  font: inherit;
+  text-align: left;
+  border: 1px solid var(--layout-border);
+  border-radius: 0.375rem;
+  background: var(--layout-sidebar-bg);
+  color: inherit;
+  cursor: pointer;
+}
+
+.game-page__assign-dialog-player:hover:not(:disabled) {
+  background: var(--layout-hover);
+}
+
+.game-page__assign-dialog-player:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.game-page__assign-dialog-player-name {
+  font-weight: 600;
+}
+
+.game-page__assign-dialog-player-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.game-page__assign-dialog-empty {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.game-page__assign-dialog-actions {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: flex-end;
 }
