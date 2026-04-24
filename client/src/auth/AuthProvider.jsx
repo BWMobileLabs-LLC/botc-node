@@ -11,8 +11,15 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => loadPersistedSession()?.user ?? null)
 
   const applySession = useCallback((token, nextUser) => {
+    setUser((prevUser) => {
+      const prevId = prevUser?.id != null ? String(prevUser.id) : null
+      const nextId = nextUser?.id != null ? String(nextUser.id) : null
+      if (prevId != null && nextId != null && prevId !== nextId) {
+        clearGameSession()
+      }
+      return nextUser
+    })
     setAccessToken(token)
-    setUser(nextUser)
     persistSession(token, nextUser)
   }, [])
 

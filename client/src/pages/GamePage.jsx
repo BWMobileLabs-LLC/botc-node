@@ -49,6 +49,31 @@ export default function GamePage() {
   }, [isAuthenticated])
 
   useEffect(() => {
+    if (!isAuthenticated) return
+    if (loadGameSession()) return
+
+    let cancelled = false
+    authorizedFetch('/api/games/current_game')
+      .then(async (res) => {
+        if (cancelled || !res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        const gameId = gameIdFromApiBody(data.game_id)
+        if (!gameId) return
+        const inviteCode = typeof data.invite_code === 'string' ? data.invite_code.trim() : ''
+        if (!inviteCode) return
+        const isStoryteller = data.is_storyteller === true
+        saveGameSession({ gameId, inviteCode, isStoryteller })
+        refreshSession()
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthenticated, authorizedFetch, refreshSession])
+
+  useEffect(() => {
     if (!isAuthenticated || !session?.gameId) {
       setGameSnapshot(null)
       setGameFetchStatus('idle')
@@ -56,11 +81,12 @@ export default function GamePage() {
       return
     }
 
+    const requestGameId = session.gameId
     let cancelled = false
     setGameFetchStatus('loading')
     setGameFetchError(null)
 
-    authorizedFetch(`/api/games/${encodeURIComponent(session.gameId)}`)
+    authorizedFetch(`/api/games/${encodeURIComponent(requestGameId)}`)
       .then(async (res) => {
         if (cancelled) return
         if (!res.ok) {
@@ -79,6 +105,19 @@ export default function GamePage() {
         }
         setGameSnapshot(data)
         setGameFetchStatus('ok')
+        const stored = loadGameSession()
+        if (
+          stored &&
+          stored.gameId === requestGameId &&
+          typeof data.game.is_storyteller === 'boolean'
+        ) {
+          saveGameSession({
+            gameId: stored.gameId,
+            inviteCode: stored.inviteCode,
+            isStoryteller: data.game.is_storyteller,
+          })
+          refreshSession()
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -91,7 +130,7 @@ export default function GamePage() {
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated, session?.gameId, authorizedFetch])
+  }, [isAuthenticated, session?.gameId, authorizedFetch, refreshSession])
 
   const onCreate = async (e) => {
     e.preventDefault()
@@ -192,16 +231,14 @@ export default function GamePage() {
   }
 
   const onLeaveLobby = async () => {
-    if (!session) return
+    const s = loadGameSession()
+    if (!s) return
     setLeavePending(true)
     try {
-      if (!session.isStoryteller) {
-        const res = await authorizedFetch(`/api/games/${session.gameId}/leave`, {
+      if (!s.isStoryteller) {
+        await authorizedFetch(`/api/games/${encodeURIComponent(s.gameId)}/leave`, {
           method: 'POST',
         })
-        if (!res.ok && res.status !== 404) {
-          /* still clear local session so UI is not stuck */
-        }
       }
     } catch {
       /* ignore */
@@ -227,12 +264,19 @@ export default function GamePage() {
   }
 
   if (session) {
+    const resolvedIsStoryteller =
+      gameFetchStatus === 'ok' &&
+      gameSnapshot?.game &&
+      typeof gameSnapshot.game.is_storyteller === 'boolean'
+        ? gameSnapshot.game.is_storyteller
+        : session.isStoryteller
+
     return (
       <div className="page game-page">
         <h1 className="page__title">Game</h1>
         <section className="game-page__in-game" aria-labelledby="game-invite-heading">
           <p id="game-invite-heading" className="game-page__in-game-label">
-            {session.isStoryteller ? 'You are hosting this game.' : 'You are in this game.'}
+            {resolvedIsStoryteller ? 'You are hosting this game.' : 'You are in this game.'}
           </p>
           <p className="game-page__invite-hint">Share this invite code with players:</p>
           <div className="game-page__invite-row">
