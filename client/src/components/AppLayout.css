@@ -71,6 +71,8 @@
 }
 
 .layout__brand {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
   font-size: clamp(0.95rem, 2.5vw, 1.05rem);
   text-decoration: none;
@@ -78,6 +80,28 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.layout__script-toggle {
+  flex-shrink: 0;
+  padding: 0.4rem 0.65rem;
+  font: inherit;
+  font-weight: 500;
+  font-size: 0.875rem;
+  border: 1px solid var(--layout-border);
+  border-radius: 0.375rem;
+  background: var(--layout-sidebar-bg);
+  color: inherit;
+  cursor: pointer;
+}
+
+.layout__script-toggle:hover {
+  background: var(--layout-hover);
+}
+
+.layout__script-toggle:focus-visible {
+  outline: 2px solid var(--layout-focus);
+  outline-offset: 1px;
 }
 
 .layout__brand:hover {
@@ -184,5 +208,66 @@
   padding: 1rem 0.75rem;
   overflow: auto;
   border-right-width: 1px;
+  opacity: 1;
+}
+
+.layout__script-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 34;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: rgba(15, 23, 42, 0.45);
+  cursor: pointer;
+}
+
+.layout__script-panel {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  background: var(--layout-sidebar-bg);
+}
+
+/* Narrow: script drawer from the right */
+.layout:not(.layout--wide) .layout__script-panel {
+  position: fixed;
+  top: var(--header-h);
+  right: 0;
+  bottom: 0;
+  width: min(22rem, 92vw);
+  z-index: 35;
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+  box-shadow: -4px 0 24px rgba(15, 23, 42, 0.12);
+  border-left: 1px solid var(--layout-border);
+  padding: 1rem 0.75rem;
+  overflow: auto;
+}
+
+.layout:not(.layout--wide).layout--script-open .layout__script-panel {
+  transform: translateX(0);
+}
+
+/* Wide: script panel in flow, collapsible width (mirrors nav sidebar) */
+.layout--wide .layout__script-panel {
+  order: 3;
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: hidden;
+  border-left-width: 0;
+  opacity: 0;
+  transition:
+    width 0.2s ease,
+    opacity 0.15s ease,
+    padding 0.2s ease,
+    border-width 0.2s ease;
+}
+
+.layout--wide.layout--script-open .layout__script-panel {
+  width: min(24rem, 34vw);
+  padding: 1rem 0.75rem;
+  overflow: auto;
+  border-left: 1px solid var(--layout-border);
   opacity: 1;
 }

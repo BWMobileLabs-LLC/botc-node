@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout.jsx'
+import { GameScriptPanelProvider } from './context/GameScriptPanelContext.jsx'
 import AuthPage from './pages/AuthPage.jsx'
 import CharactersPage from './pages/CharactersPage.jsx'
 import CreateScriptPage from './pages/CreateScriptPage.jsx'
@@ -12,7 +13,13 @@ import GamePage from './pages/GamePage.jsx'
 export default function App() {
   return (
     <Routes>
-      <Route element={<AppLayout />}>
+      <Route
+        element={
+          <GameScriptPanelProvider>
+            <AppLayout />
+          </GameScriptPanelProvider>
+        }
+      >
         <Route path="/" element={<HomePage />} />
         <Route path="/game" element={<GamePage />} />
         <Route path="/characters" element={<CharactersPage />} />

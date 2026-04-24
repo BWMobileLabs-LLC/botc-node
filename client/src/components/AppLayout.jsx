@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { GameScriptPanelSidebar } from './GameScriptPanelSidebar.jsx'
+import { useGameScriptPanel } from '../context/GameScriptPanelContext.jsx'
 import './AppLayout.css'
 
 function useWideScreen() {
@@ -22,6 +24,8 @@ function useWideScreen() {
 export default function AppLayout() {
   const wide = useWideScreen()
   const [navOpen, setNavOpen] = useState(wide)
+  const { scriptDetail } = useGameScriptPanel()
+  const [scriptPanelOpen, setScriptPanelOpen] = useState(false)
 
   const closeNavIfNarrow = () => {
     if (!wide) setNavOpen(false)
@@ -37,16 +41,48 @@ export default function AppLayout() {
     return () => mq.removeEventListener('change', onBreakpoint)
   }, [])
 
+  useEffect(() => {
+    if (!scriptDetail) setScriptPanelOpen(false)
+  }, [scriptDetail])
+
+  useEffect(() => {
+    if (!scriptPanelOpen || !scriptDetail) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') setScriptPanelOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [scriptPanelOpen, scriptDetail])
+
   const toggleNav = () => setNavOpen((o) => !o)
 
+  const toggleScriptPanel = () => setScriptPanelOpen((o) => !o)
+
+  const layoutClass = [
+    'layout',
+    navOpen ? 'layout--nav-open' : '',
+    wide ? 'layout--wide' : '',
+    scriptDetail && scriptPanelOpen ? 'layout--script-open' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
-    <div className={`layout ${navOpen ? 'layout--nav-open' : ''} ${wide ? 'layout--wide' : ''}`}>
+    <div className={layoutClass}>
       {!wide && navOpen && (
         <button
           type="button"
           className="layout__backdrop"
           aria-label="Close menu"
           onClick={() => setNavOpen(false)}
+        />
+      )}
+      {!wide && scriptPanelOpen && scriptDetail && (
+        <button
+          type="button"
+          className="layout__script-backdrop"
+          aria-label="Close script panel"
+          onClick={() => setScriptPanelOpen(false)}
         />
       )}
 
@@ -68,6 +104,17 @@ export default function AppLayout() {
         <NavLink to="/" className="layout__brand" end onClick={closeNavIfNarrow}>
           Blood on the Clocktower
         </NavLink>
+        {scriptDetail && (
+          <button
+            type="button"
+            className="layout__script-toggle"
+            onClick={toggleScriptPanel}
+            aria-expanded={scriptPanelOpen}
+            aria-controls="game-script-panel"
+          >
+            {scriptPanelOpen ? 'Hide script' : 'Show script'}
+          </button>
+        )}
       </header>
 
       <div className="layout__body">
@@ -125,6 +172,20 @@ export default function AppLayout() {
         <main className="layout__main">
           <Outlet />
         </main>
+
+        {scriptDetail && (
+          <aside
+            id="game-script-panel"
+            className="layout__script-panel"
+            aria-label="Active game script"
+            aria-hidden={!scriptPanelOpen}
+          >
+            <GameScriptPanelSidebar
+              detail={scriptDetail}
+              onClose={wide ? undefined : () => setScriptPanelOpen(false)}
+            />
+          </aside>
+        )}
       </div>
     </div>
   )

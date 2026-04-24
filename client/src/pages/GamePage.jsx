@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import '../App.css'
 import './GamePage.css'
 import { useAuth } from '../auth/useAuth.js'
+import { useGameScriptPanel } from '../context/GameScriptPanelContext.jsx'
 import { clearGameSession, loadGameSession, saveGameSession } from '../game/gameSession.js'
 
 function gameIdFromApiBody(raw) {
@@ -61,6 +62,7 @@ function rosterPlayerLabel(p) {
 
 export default function GamePage() {
   const { isAuthenticated, authorizedFetch } = useAuth()
+  const { setScriptDetail: setPanelScriptDetail } = useGameScriptPanel()
   const [session, setSession] = useState(() => loadGameSession())
 
   const [gameName, setGameName] = useState('')
@@ -223,6 +225,28 @@ export default function GamePage() {
       cancelled = true
     }
   }, [scriptPickerOpen, scriptSearchInput])
+
+  useEffect(() => {
+    if (!session) {
+      setPanelScriptDetail(null)
+      return
+    }
+    if (
+      gameFetchStatus === 'ok' &&
+      gameScriptDetailStatus === 'ok' &&
+      gameScriptDetail
+    ) {
+      setPanelScriptDetail(gameScriptDetail)
+      return () => setPanelScriptDetail(null)
+    }
+    setPanelScriptDetail(null)
+  }, [
+    session,
+    gameFetchStatus,
+    gameScriptDetailStatus,
+    gameScriptDetail,
+    setPanelScriptDetail,
+  ])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -604,13 +628,7 @@ export default function GamePage() {
     return (
       <div className="page game-page">
         <h1 className="page__title">Game</h1>
-        <section
-          className="game-page__in-game"
-          aria-labelledby="game-invite-heading"
-          data-game-script-detail-status={gameScriptDetailStatus}
-          data-game-script-detail-has={gameScriptDetail ? '1' : '0'}
-          data-game-script-detail-error={gameScriptDetailError ?? ''}
-        >
+        <section className="game-page__in-game" aria-labelledby="game-invite-heading">
           <div className="game-page__header-row">
             <div className="game-page__invite-block">
               <p id="game-invite-heading" className="game-page__in-game-label">
