@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import db from '../config/db.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { escapePgLikePattern } from '../utils/escapePgLikePattern.js';
 
 const router = Router();
+
+/** Max characters accepted for script name search (after trim). */
+const SCRIPT_SEARCH_MAX_LEN = 200;
 
 // List 20 scripts
 /**
@@ -87,6 +91,31 @@ router.get('/my_scripts', authMiddleware, async (req, res) => {
 	} catch (err) {
 		console.log(err)
 		res.status(500).json({ error: 'Failed to list scripts' });
+	}
+});
+
+// Search by name (must be registered before GET /:id or "search" is captured as an id)
+router.get('/search', async (req, res) => {
+	const raw = req.query.q ?? req.query.search_string;
+	let q = typeof raw === 'string' ? raw.trim() : '';
+	try {
+		if (!q) {
+			return res.json([]);
+		}
+		if (q.length > SCRIPT_SEARCH_MAX_LEN) {
+			q = q.slice(0, SCRIPT_SEARCH_MAX_LEN);
+		}
+		const pattern = `%${escapePgLikePattern(q)}%`;
+		const rows = await db('scripts')
+			.select('scripts.id', 'scripts.name', 'description', 'is_official', 'username as author')
+			.join('users', 'users.id', 'scripts.owner_id')
+			.whereRaw(`scripts.name ILIKE ? ESCAPE '\\'`, [pattern])
+			.orderBy('scripts.created_at', 'asc')
+			.limit(50);
+		return res.status(200).json(rows);
+	} catch (err) {
+		console.log(err);
+		return res.status(500).json({ message: 'Could not search scripts' });
 	}
 });
 
