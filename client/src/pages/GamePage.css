@@ -162,6 +162,12 @@
   font-weight: 500;
 }
 
+.game-page__default-composition {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .game-page__meta-status {
   margin: 0;
   font-size: 0.9rem;

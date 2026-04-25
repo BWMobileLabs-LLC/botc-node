@@ -30,6 +30,26 @@ function formatGameStatus(status) {
   return s.replace(/_/g, ' ')
 }
 
+/** Trouble Brewing default good/evil counts by seated player count (client reference only). */
+function defaultCompositionForPlayerCount(playerCount) {
+  const n = Math.floor(Number(playerCount))
+  if (!Number.isFinite(n) || n < 5) return null
+  if (n >= 15) return { townsfolk: 9, outsider: 2, minion: 3, demon: 1 }
+  const byN = new Map([
+    [5, { townsfolk: 3, outsider: 0, minion: 1, demon: 1 }],
+    [6, { townsfolk: 3, outsider: 1, minion: 1, demon: 1 }],
+    [7, { townsfolk: 5, outsider: 0, minion: 1, demon: 1 }],
+    [8, { townsfolk: 5, outsider: 1, minion: 1, demon: 1 }],
+    [9, { townsfolk: 5, outsider: 2, minion: 1, demon: 1 }],
+    [10, { townsfolk: 7, outsider: 0, minion: 2, demon: 1 }],
+    [11, { townsfolk: 7, outsider: 1, minion: 2, demon: 1 }],
+    [12, { townsfolk: 7, outsider: 2, minion: 2, demon: 1 }],
+    [13, { townsfolk: 9, outsider: 0, minion: 3, demon: 1 }],
+    [14, { townsfolk: 9, outsider: 1, minion: 3, demon: 1 }],
+  ])
+  return byN.get(n) ?? null
+}
+
 function buildSeatSlots(players) {
   const list = (Array.isArray(players) ? players : []).filter((p) => p != null)
   const n = list.length
@@ -744,6 +764,9 @@ export default function GamePage() {
     const canStartGame =
       resolvedIsStoryteller && gameFetchStatus === 'ok' && gameSnapshot?.game?.status === 'lobby'
 
+    const defaultComposition =
+      gameFetchStatus === 'ok' ? defaultCompositionForPlayerCount(seatCount) : null
+
     return (
       <div className="page game-page">
         <h1 className="page__title">Game</h1>
@@ -796,6 +819,29 @@ export default function GamePage() {
                   <div className="game-page__meta-row">
                     <dt>Storyteller</dt>
                     <dd>{gameSnapshot.game.storyteller ?? '—'}</dd>
+                  </div>
+                  <div className="game-page__meta-row">
+                    <dt>Default characters</dt>
+                    <dd>
+                      {defaultComposition ? (
+                        <div className="game-page__default-composition">
+                          <div>{defaultComposition.townsfolk} townsfolk</div>
+                          <div>
+                            {defaultComposition.outsider}{' '}
+                            {defaultComposition.outsider === 1 ? 'outsider' : 'outsiders'}
+                          </div>
+                          <div>
+                            {defaultComposition.minion}{' '}
+                            {defaultComposition.minion === 1 ? 'minion' : 'minions'}
+                          </div>
+                          <div>
+                            {defaultComposition.demon} demon
+                          </div>
+                        </div>
+                      ) : (
+                        '—'
+                      )}
+                    </dd>
                   </div>
                 </dl>
               )}
