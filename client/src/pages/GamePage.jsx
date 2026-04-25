@@ -72,6 +72,7 @@ export default function GamePage() {
   const [createPending, setCreatePending] = useState(false)
   const [joinPending, setJoinPending] = useState(false)
   const [sessionActionPending, setSessionActionPending] = useState(false)
+  const [startGamePending, setStartGamePending] = useState(false)
   const [sessionActionError, setSessionActionError] = useState(null)
   const [confirmAction, setConfirmAction] = useState(null)
   const confirmDialogRef = useRef(null)
@@ -490,6 +491,33 @@ export default function GamePage() {
     }
   }
 
+  const performStartGame = async () => {
+    const s = loadGameSession()
+    if (!s || !s.isStoryteller) return
+    setSessionActionError(null)
+    setStartGamePending(true)
+    try {
+      const res = await authorizedFetch(`/api/games/${encodeURIComponent(s.gameId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'in_progress' }),
+      })
+      if (!res.ok) {
+        setSessionActionError(await readErrorMessage(res))
+        return
+      }
+      const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(s.gameId)}`)
+      if (fresh.ok) {
+        const data = await fresh.json()
+        if (data?.game) setGameSnapshot(data)
+      }
+    } catch {
+      setSessionActionError('Could not start the game.')
+    } finally {
+      setStartGamePending(false)
+    }
+  }
+
   const assignPlayerToSeat = useCallback(
     async (userId, seatNum) => {
       const gid = session?.gameId
@@ -624,6 +652,8 @@ export default function GamePage() {
             .filter((p) => p != null && p.user_id != null && String(p.user_id).trim() !== '')
             .sort((a, b) => rosterPlayerLabel(a).localeCompare(rosterPlayerLabel(b), undefined, { sensitivity: 'base' }))
         : []
+    const canStartGame =
+      resolvedIsStoryteller && gameFetchStatus === 'ok' && gameSnapshot?.game?.status === 'lobby'
 
     return (
       <div className="page game-page">
@@ -682,6 +712,63 @@ export default function GamePage() {
               )}
             </div>
           </div>
+
+          {sessionActionError && (
+            <p className="game-page__session-action-error" role="alert">
+              {sessionActionError}
+            </p>
+          )}
+
+          {resolvedIsStoryteller ? (
+            <div className="game-page__story-actions">
+              <button
+                type="button"
+                className="game-page__script-picker-open-btn"
+                onClick={() => void performStartGame()}
+                disabled={sessionActionPending || startGamePending || !canStartGame}
+              >
+                {startGamePending ? 'Starting…' : 'Start game'}
+              </button>
+              <button
+                type="button"
+                className="game-page__script-picker-open-btn"
+                onClick={() => {
+                  setAssignSeatModal(null)
+                  setUnseatModal(null)
+                  setScriptPatchError(null)
+                  setScriptSearchError(null)
+                  setScriptSearchInput('')
+                  setScriptPickerOpen(true)
+                }}
+                disabled={gameFetchStatus !== 'ok' || sessionActionPending || startGamePending}
+              >
+                Choose script
+              </button>
+              <button
+                type="button"
+                className="game-page__danger-btn"
+                onClick={() => {
+                  setSessionActionError(null)
+                  setConfirmAction('endGame')
+                }}
+                disabled={sessionActionPending || startGamePending}
+              >
+                End game
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="game-page__leave-btn"
+              onClick={() => {
+                setSessionActionError(null)
+                setConfirmAction('leave')
+              }}
+              disabled={sessionActionPending}
+            >
+              Leave game
+            </button>
+          )}
 
           <div className="game-page__seat-stage" aria-label="Player seats">
             {gameFetchStatus === 'ok' && gameSnapshot?.game && seatCount > 0 && (
@@ -764,55 +851,6 @@ export default function GamePage() {
               </div>
             )}
           </div>
-
-          {sessionActionError && (
-            <p className="game-page__session-action-error" role="alert">
-              {sessionActionError}
-            </p>
-          )}
-
-          {resolvedIsStoryteller ? (
-            <div className="game-page__story-actions">
-              <button
-                type="button"
-                className="game-page__script-picker-open-btn"
-                onClick={() => {
-                  setAssignSeatModal(null)
-                  setUnseatModal(null)
-                  setScriptPatchError(null)
-                  setScriptSearchError(null)
-                  setScriptSearchInput('')
-                  setScriptPickerOpen(true)
-                }}
-                disabled={gameFetchStatus !== 'ok' || sessionActionPending}
-              >
-                Choose script
-              </button>
-              <button
-                type="button"
-                className="game-page__danger-btn"
-                onClick={() => {
-                  setSessionActionError(null)
-                  setConfirmAction('endGame')
-                }}
-                disabled={sessionActionPending}
-              >
-                End game
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="game-page__leave-btn"
-              onClick={() => {
-                setSessionActionError(null)
-                setConfirmAction('leave')
-              }}
-              disabled={sessionActionPending}
-            >
-              Leave game
-            </button>
-          )}
 
           <dialog
             ref={confirmDialogRef}
