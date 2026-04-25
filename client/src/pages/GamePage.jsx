@@ -5,6 +5,7 @@ import './GamePage.css'
 import { useAuth } from '../auth/useAuth.js'
 import { useGameScriptPanel } from '../context/GameScriptPanelContext.jsx'
 import { clearGameSession, loadGameSession, saveGameSession } from '../game/gameSession.js'
+import { getCharacterIconSrc } from '../utils/characterIcon.js'
 
 function gameIdFromApiBody(raw) {
   if (raw == null) return ''
@@ -60,6 +61,14 @@ function rosterPlayerLabel(p) {
   return p.display_name?.trim() || p.username?.trim() || 'Player'
 }
 
+const CHARACTER_TYPE_ORDER = ['townsfolk', 'outsider', 'minion', 'demon', 'traveller']
+
+function formatCharacterType(type) {
+  if (type == null || String(type).trim() === '') return 'Other'
+  const s = String(type).trim()
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 export default function GamePage() {
   const { isAuthenticated, authorizedFetch } = useAuth()
   const { setScriptDetail: setPanelScriptDetail } = useGameScriptPanel()
@@ -88,6 +97,10 @@ export default function GamePage() {
   const [unseatPending, setUnseatPending] = useState(false)
   const [unseatError, setUnseatError] = useState(null)
   const unseatDialogRef = useRef(null)
+  const [characterPickerModal, setCharacterPickerModal] = useState(null)
+  const [characterPickerPending, setCharacterPickerPending] = useState(false)
+  const [characterPickerError, setCharacterPickerError] = useState(null)
+  const characterPickerDialogRef = useRef(null)
 
   /** Loaded from `GET /api/scripts/:id` when the game has `script_id` (for upcoming UI). */
   const [gameScriptDetail, setGameScriptDetail] = useState(null)
@@ -136,6 +149,16 @@ export default function GamePage() {
       el.close()
     }
   }, [unseatModal])
+
+  useLayoutEffect(() => {
+    const el = characterPickerDialogRef.current
+    if (!el) return
+    if (characterPickerModal) {
+      if (!el.open) el.showModal()
+    } else if (el.open) {
+      el.close()
+    }
+  }, [characterPickerModal])
 
   useLayoutEffect(() => {
     const el = scriptPickerDialogRef.current
@@ -586,6 +609,40 @@ export default function GamePage() {
     [session?.gameId, authorizedFetch]
   )
 
+  const assignCharacterToPlayer = useCallback(
+    async (userId, characterId) => {
+      const gid = session?.gameId
+      if (!gid || userId == null || characterId == null) return
+      setCharacterPickerError(null)
+      setCharacterPickerPending(true)
+      try {
+        const res = await authorizedFetch(
+          `/api/games/${encodeURIComponent(gid)}/player/${encodeURIComponent(userId)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ character_id: characterId }),
+          }
+        )
+        if (!res.ok) {
+          setCharacterPickerError(await readErrorMessage(res))
+          return
+        }
+        const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+        if (fresh.ok) {
+          const data = await fresh.json()
+          if (data?.game) setGameSnapshot(data)
+        }
+        setCharacterPickerModal(null)
+      } catch {
+        setCharacterPickerError('Could not assign character.')
+      } finally {
+        setCharacterPickerPending(false)
+      }
+    },
+    [session?.gameId, authorizedFetch]
+  )
+
   const applyGameScript = useCallback(
     async (scriptId) => {
       const gid = session?.gameId
@@ -645,6 +702,8 @@ export default function GamePage() {
         ? buildSeatSlots(gameSnapshot.players)
         : []
     const seatCount = seatSlots.length
+    const gameIsInProgress = gameSnapshot?.game?.status === 'in_progress'
+    const useCharacterPickerOnSeatClick = resolvedIsStoryteller && gameIsInProgress
 
     const rosterForAssign =
       resolvedIsStoryteller && Array.isArray(gameSnapshot?.players)
@@ -652,6 +711,36 @@ export default function GamePage() {
             .filter((p) => p != null && p.user_id != null && String(p.user_id).trim() !== '')
             .sort((a, b) => rosterPlayerLabel(a).localeCompare(rosterPlayerLabel(b), undefined, { sensitivity: 'base' }))
         : []
+    const charactersByType = (() => {
+      const chars = Array.isArray(gameScriptDetail?.characters) ? gameScriptDetail.characters : []
+      const buckets = new Map()
+      for (const c of chars) {
+        if (!c) continue
+        const key = String(c.type ?? '').trim().toLowerCase() || 'other'
+        const list = buckets.get(key) ?? []
+        list.push(c)
+        buckets.set(key, list)
+      }
+      const ordered = []
+      for (const t of CHARACTER_TYPE_ORDER) {
+        const list = buckets.get(t)
+        if (list?.length) ordered.push({ type: t, characters: list })
+        buckets.delete(t)
+      }
+      for (const [type, characters] of buckets.entries()) {
+        if (characters?.length) ordered.push({ type, characters })
+      }
+      return ordered
+    })()
+    const scriptCharacterByName = (() => {
+      const chars = Array.isArray(gameScriptDetail?.characters) ? gameScriptDetail.characters : []
+      const map = new Map()
+      for (const c of chars) {
+        const key = String(c?.name ?? '').trim().toLowerCase()
+        if (key) map.set(key, c)
+      }
+      return map
+    })()
     const canStartGame =
       resolvedIsStoryteller && gameFetchStatus === 'ok' && gameSnapshot?.game?.status === 'lobby'
 
@@ -783,10 +872,28 @@ export default function GamePage() {
                   const ariaTaken = `Seat ${seatNum}, ${playerDisplayLabel(player, seatNum)}`
                   const seatClass = `game-page__seat${player ? ' game-page__seat--taken' : ' game-page__seat--empty'}${resolvedIsStoryteller ? ' game-page__seat--assignable' : ''}`
                   const seatStyle = { '--seat-i': i }
+                  const assignedCharacterName = String(player?.character_name ?? '').trim()
+                  const assignedCharacter =
+                    resolvedIsStoryteller && assignedCharacterName
+                      ? scriptCharacterByName.get(assignedCharacterName.toLowerCase()) ?? null
+                      : null
+                  const assignedCharacterIcon = assignedCharacter ? getCharacterIconSrc(assignedCharacter) : null
 
                   const inner = player ? (
                     <>
-                      <div className="game-page__seat-icon" aria-hidden="true" />
+                      <div className="game-page__seat-icon" aria-hidden="true">
+                        {resolvedIsStoryteller && assignedCharacterIcon && (
+                          <img
+                            className="game-page__seat-character-icon"
+                            src={assignedCharacterIcon}
+                            alt=""
+                            width={56}
+                            height={56}
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        )}
+                      </div>
                       <span className="game-page__seat-label">
                         {playerDisplayLabel(player, seatNum)}
                       </span>
@@ -809,14 +916,33 @@ export default function GamePage() {
                         style={seatStyle}
                         disabled={Boolean(filledWithoutUser)}
                         aria-label={
-                          player
-                            ? filledWithoutUser
-                              ? ariaTaken
-                              : `${ariaTaken}. Click to remove from this seat.`
-                            : `${ariaEmpty}. Choose player to assign.`
+                          useCharacterPickerOnSeatClick
+                            ? player && !filledWithoutUser
+                              ? `${ariaTaken}. Choose a character for this player.`
+                              : ariaEmpty
+                            : player
+                              ? filledWithoutUser
+                                ? ariaTaken
+                                : `${ariaTaken}. Click to remove from this seat.`
+                              : `${ariaEmpty}. Choose player to assign.`
                         }
                         onClick={() => {
+                          setCharacterPickerError(null)
                           setAssignSeatError(null)
+                          setUnseatError(null)
+
+                          if (useCharacterPickerOnSeatClick) {
+                            setAssignSeatModal(null)
+                            setUnseatModal(null)
+                            if (!player || filledWithoutUser) return
+                            setCharacterPickerModal({
+                              seatNum,
+                              userId: player.user_id,
+                              playerLabel: playerDisplayLabel(player, seatNum),
+                            })
+                            return
+                          }
+
                           if (!player) {
                             setUnseatModal(null)
                             setAssignSeatModal({ seatNum })
@@ -824,7 +950,6 @@ export default function GamePage() {
                           }
                           if (filledWithoutUser) return
                           setAssignSeatModal(null)
-                          setUnseatError(null)
                           setUnseatModal({
                             seatNum,
                             userId: player.user_id,
@@ -1015,6 +1140,95 @@ export default function GamePage() {
                     onClick={() => void clearPlayerSeat(unseatModal.userId)}
                   >
                     {unseatPending ? 'Removing…' : 'Remove from seat'}
+                  </button>
+                </div>
+              </>
+            )}
+          </dialog>
+
+          <dialog
+            ref={characterPickerDialogRef}
+            className="game-page__assign-dialog game-page__character-dialog"
+            onClose={() => {
+              setCharacterPickerModal(null)
+              setCharacterPickerError(null)
+            }}
+            aria-labelledby="character-picker-title"
+          >
+            {characterPickerModal && (
+              <>
+                <h2 id="character-picker-title" className="game-page__assign-dialog-title">
+                  Choose character for {characterPickerModal.playerLabel}
+                </h2>
+                <p className="game-page__assign-dialog-hint">
+                  Seat {characterPickerModal.seatNum}. Select a script character to assign.
+                </p>
+                {characterPickerError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {characterPickerError}
+                  </p>
+                )}
+                {gameScriptDetailStatus === 'loading' && (
+                  <p className="game-page__assign-dialog-hint">Loading script characters…</p>
+                )}
+                {gameScriptDetailStatus === 'error' && gameScriptDetailError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {gameScriptDetailError}
+                  </p>
+                )}
+                {gameScriptDetailStatus === 'ok' && charactersByType.length > 0 && (
+                  <div className="game-page__character-groups">
+                    {charactersByType.map(({ type, characters }) => (
+                      <section key={type} className="game-page__character-group">
+                        <h3 className="game-page__character-group-title">{formatCharacterType(type)}</h3>
+                        <ul className="game-page__character-grid">
+                          {characters.map((c) => {
+                            const iconSrc = getCharacterIconSrc(c)
+                            return (
+                              <li key={c.id}>
+                                <button
+                                  type="button"
+                                  className="game-page__character-item"
+                                  disabled={characterPickerPending}
+                                  onClick={() => void assignCharacterToPlayer(characterPickerModal.userId, c.id)}
+                                >
+                                  {iconSrc ? (
+                                    <img
+                                      className="game-page__character-item-icon"
+                                      src={iconSrc}
+                                      alt=""
+                                      width={44}
+                                      height={44}
+                                      loading="lazy"
+                                      decoding="async"
+                                    />
+                                  ) : (
+                                    <div
+                                      className="game-page__character-item-icon game-page__character-item-icon--placeholder"
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  <span className="game-page__character-item-name">{c.name}</span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </section>
+                    ))}
+                  </div>
+                )}
+                {gameScriptDetailStatus === 'ok' && charactersByType.length === 0 && (
+                  <p className="game-page__assign-dialog-empty">No characters found for this script.</p>
+                )}
+                <div className="game-page__assign-dialog-actions">
+                  <button
+                    type="button"
+                    className="game-page__confirm-cancel"
+                    onClick={() => setCharacterPickerModal(null)}
+                    disabled={characterPickerPending}
+                  >
+                    Cancel
                   </button>
                 </div>
               </>
