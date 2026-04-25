@@ -632,6 +632,11 @@ button.game-page__seat:focus-visible {
   background: rgba(0, 0, 0, 0.45);
 }
 
+/* Programmatic focus target after `showModal()`; avoid a heavy chrome ring on the whole surface. */
+.game-page__character-dialog:focus {
+  outline: none;
+}
+
 .game-page__assign-dialog-title {
   margin: 0 0 0.35rem;
   font-size: 1.05rem;
@@ -773,6 +778,16 @@ button.game-page__seat:focus-visible {
 
 .game-page__character-item:hover:not(:disabled) {
   background: var(--layout-hover);
+  border-color: var(--layout-focus);
+}
+
+.game-page__character-item--assigned {
+  border-color: var(--layout-focus);
+  box-shadow: 0 0 0 1px var(--layout-focus);
+  background: var(--layout-hover);
+}
+
+.game-page__character-item--assigned:hover:not(:disabled) {
   border-color: var(--layout-focus);
 }
 

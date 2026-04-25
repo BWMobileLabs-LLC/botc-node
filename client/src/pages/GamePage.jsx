@@ -175,6 +175,19 @@ export default function GamePage() {
     if (!el) return
     if (characterPickerModal) {
       if (!el.open) el.showModal()
+      // `showModal()` focuses the first focusable control; that looked like the "assigned" role
+      // highlight (same accent border). Move focus to the dialog after layout/paint.
+      const raf = { outer: 0, inner: 0 }
+      raf.outer = window.requestAnimationFrame(() => {
+        raf.inner = window.requestAnimationFrame(() => {
+          const d = characterPickerDialogRef.current
+          if (d?.open) d.focus({ preventScroll: true })
+        })
+      })
+      return () => {
+        window.cancelAnimationFrame(raf.outer)
+        window.cancelAnimationFrame(raf.inner)
+      }
     } else if (el.open) {
       el.close()
     }
@@ -632,7 +645,8 @@ export default function GamePage() {
   const assignCharacterToPlayer = useCallback(
     async (userId, characterId) => {
       const gid = session?.gameId
-      if (!gid || userId == null || characterId == null) return
+      if (!gid || userId == null) return
+      const clearing = characterId == null
       setCharacterPickerError(null)
       setCharacterPickerPending(true)
       try {
@@ -641,7 +655,7 @@ export default function GamePage() {
           {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ character_id: characterId }),
+            body: JSON.stringify({ character_id: clearing ? null : characterId }),
           }
         )
         if (!res.ok) {
@@ -653,9 +667,15 @@ export default function GamePage() {
           const data = await fresh.json()
           if (data?.game) setGameSnapshot(data)
         }
-        setCharacterPickerModal(null)
+        if (clearing) {
+          setCharacterPickerModal((m) =>
+            m && String(m.userId) === String(userId) ? { ...m, assignedCharacterId: null } : m
+          )
+        } else {
+          setCharacterPickerModal(null)
+        }
       } catch {
-        setCharacterPickerError('Could not assign character.')
+        setCharacterPickerError(clearing ? 'Could not clear character.' : 'Could not assign character.')
       } finally {
         setCharacterPickerPending(false)
       }
@@ -985,6 +1005,7 @@ export default function GamePage() {
                               seatNum,
                               userId: player.user_id,
                               playerLabel: playerDisplayLabel(player, seatNum),
+                              assignedCharacterId: player.character_id ?? null,
                             })
                             return
                           }
@@ -1194,6 +1215,7 @@ export default function GamePage() {
 
           <dialog
             ref={characterPickerDialogRef}
+            tabIndex={-1}
             className="game-page__assign-dialog game-page__character-dialog"
             onClose={() => {
               setCharacterPickerModal(null)
@@ -1207,7 +1229,8 @@ export default function GamePage() {
                   Choose character for {characterPickerModal.playerLabel}
                 </h2>
                 <p className="game-page__assign-dialog-hint">
-                  Seat {characterPickerModal.seatNum}. Select a script character to assign.
+                  Seat {characterPickerModal.seatNum}. Select a script character to assign, or select the
+                  highlighted character again to clear it.
                 </p>
                 {characterPickerError && (
                   <p className="game-page__assign-dialog-error" role="alert">
@@ -1230,13 +1253,25 @@ export default function GamePage() {
                         <ul className="game-page__character-grid">
                           {characters.map((c) => {
                             const iconSrc = getCharacterIconSrc(c)
+                            const assignedId = characterPickerModal.assignedCharacterId
+                            const isAssigned =
+                              assignedId != null &&
+                              String(assignedId).trim() !== '' &&
+                              String(c.id) === String(assignedId)
                             return (
                               <li key={c.id}>
                                 <button
                                   type="button"
-                                  className="game-page__character-item"
+                                  className={`game-page__character-item${isAssigned ? ' game-page__character-item--assigned' : ''}`}
+                                  aria-pressed={isAssigned}
                                   disabled={characterPickerPending}
-                                  onClick={() => void assignCharacterToPlayer(characterPickerModal.userId, c.id)}
+                                  onClick={() => {
+                                    if (isAssigned) {
+                                      void assignCharacterToPlayer(characterPickerModal.userId, null)
+                                    } else {
+                                      void assignCharacterToPlayer(characterPickerModal.userId, c.id)
+                                    }
+                                  }}
                                 >
                                   {iconSrc ? (
                                     <img

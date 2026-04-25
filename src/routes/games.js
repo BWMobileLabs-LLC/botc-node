@@ -218,13 +218,17 @@ router.patch("/:gameID/player/:playerID", authMiddleware, async (req, res) => {
 		}
 
 		const update = {
-			character_id: character_id ?? player.character_id,
 			is_alive: is_alive ?? player.is_alive,
 			has_ghost_vote: has_ghost_vote ?? player.has_ghost_vote,
 			vote_used: vote_used ?? player.vote_used,
 			notes: notes ?? player.notes,
 			updated_at: db.fn.now(),
 		};
+		if (Object.prototype.hasOwnProperty.call(req.body, 'character_id')) {
+			update.character_id = character_id;
+		} else {
+			update.character_id = player.character_id;
+		}
 		if (Object.prototype.hasOwnProperty.call(req.body, 'seat_order')) {
 			update.seat_order = seat_order;
 		} else {
@@ -267,6 +271,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 			.select(
 				'gp.id',
 				'gp.user_id',
+				'gp.character_id',
 				'username',
 				'display_name',
 				'seat_order as seat',
