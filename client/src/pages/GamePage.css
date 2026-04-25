@@ -246,6 +246,7 @@
 .game-page__seat-stage {
   margin-top: 3rem;
   min-height: min(94vw, 34rem);
+  padding-bottom: 2rem;
   display: flex;
   align-items: center;
   justify-content: center;

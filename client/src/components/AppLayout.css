@@ -1,6 +1,7 @@
 .layout {
   --header-h: 3.25rem;
   --sidebar-w: 16rem;
+  height: 100%;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
@@ -153,6 +154,7 @@
   min-width: 0;
   padding: 1.5rem;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .layout__backdrop {

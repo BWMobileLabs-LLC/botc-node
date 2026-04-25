@@ -57,6 +57,7 @@ export default function AppLayout() {
   const toggleNav = () => setNavOpen((o) => !o)
 
   const toggleScriptPanel = () => setScriptPanelOpen((o) => !o)
+  const showScriptPanel = Boolean(scriptDetail && scriptPanelOpen)
 
   const layoutClass = [
     'layout',
@@ -77,7 +78,7 @@ export default function AppLayout() {
           onClick={() => setNavOpen(false)}
         />
       )}
-      {!wide && scriptPanelOpen && scriptDetail && (
+      {!wide && showScriptPanel && (
         <button
           type="button"
           className="layout__script-backdrop"
@@ -173,12 +174,12 @@ export default function AppLayout() {
           <Outlet />
         </main>
 
-        {scriptDetail && (
+        {showScriptPanel && (
           <aside
             id="game-script-panel"
             className="layout__script-panel"
             aria-label="Active game script"
-            aria-hidden={!scriptPanelOpen}
+            aria-hidden={!showScriptPanel}
           >
             <GameScriptPanelSidebar
               detail={scriptDetail}
