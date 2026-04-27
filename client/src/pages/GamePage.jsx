@@ -214,6 +214,8 @@ export default function GamePage() {
   const [seatMenuReminderDefsStatus, setSeatMenuReminderDefsStatus] = useState('idle')
   const [seatMenuReminderDefsError, setSeatMenuReminderDefsError] = useState(null)
   const [placeReminderTokenPendingId, setPlaceReminderTokenPendingId] = useState(null)
+  /** Placed reminder row ids hidden immediately on delete (optimistic UI). */
+  const [removedReminderIds, setRemovedReminderIds] = useState(() => new Set())
   const [assignRolesOpen, setAssignRolesOpen] = useState(false)
   const [assignRolesSelectedIds, setAssignRolesSelectedIds] = useState([])
   const [assignRolesPending, setAssignRolesPending] = useState(false)
@@ -538,6 +540,31 @@ export default function GamePage() {
       cancelled = true
     }
   }, [isAuthenticated, session?.gameId, authorizedFetch, refreshSession])
+
+  useEffect(() => {
+    setRemovedReminderIds(new Set())
+  }, [session?.gameId])
+
+  useEffect(() => {
+    if (!gameSnapshot?.players) return
+    setRemovedReminderIds((hidden) => {
+      if (hidden.size === 0) return hidden
+      const present = new Set()
+      for (const p of gameSnapshot.players) {
+        if (!Array.isArray(p.reminder)) continue
+        for (const r of p.reminder) present.add(String(r.id))
+      }
+      const next = new Set(hidden)
+      let changed = false
+      for (const id of hidden) {
+        if (!present.has(id)) {
+          next.delete(id)
+          changed = true
+        }
+      }
+      return changed ? next : hidden
+    })
+  }, [gameSnapshot])
 
   const onCreate = async (e) => {
     e.preventDefault()
@@ -897,6 +924,12 @@ export default function GamePage() {
       if (!gid || placedReminderRowId == null) return
       const idStr = String(placedReminderRowId)
 
+      setRemovedReminderIds((prev) => {
+        const next = new Set(prev)
+        next.add(idStr)
+        return next
+      })
+
       setGameSnapshot((prev) => {
         if (!prev?.players) return prev
         return {
@@ -910,6 +943,11 @@ export default function GamePage() {
       })
 
       const rollback = async () => {
+        setRemovedReminderIds((prev) => {
+          const next = new Set(prev)
+          next.delete(idStr)
+          return next
+        })
         try {
           const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
           if (fresh.ok) {
@@ -917,7 +955,7 @@ export default function GamePage() {
             if (data?.game) setGameSnapshot(data)
           }
         } catch {
-          /* keep optimistic state if refetch fails */
+          /* ignore */
         }
       }
 
@@ -1332,7 +1370,7 @@ export default function GamePage() {
 
                   const seatReminders =
                     resolvedIsStoryteller && player && Array.isArray(player.reminder)
-                      ? player.reminder
+                      ? player.reminder.filter((r) => !removedReminderIds.has(String(r.id)))
                       : []
 
                   const inner = player ? (
