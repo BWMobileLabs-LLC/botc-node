@@ -263,6 +263,10 @@ router.get('/:id', authMiddleware, async (req, res) => {
 			.where('id', id)
 			.first();
 
+		if (!game) {
+			return res.sendStatus(404);
+		}
+
 		const storyteller = await db('users')
 			.where('id', game.storyteller_id)
 			.first();
@@ -292,15 +296,28 @@ router.get('/:id', authMiddleware, async (req, res) => {
 			const tokens = await db('game_reminder_tokens as grt')
 				.where('grt.game_id', id)
 				.leftJoin('reminder_token_definitions as rtd', 'grt.reminder_def_id', 'rtd.id')
+				.leftJoin('characters as ch', 'ch.id', 'rtd.character_id')
+				.select(
+					'grt.id',
+					'grt.target_player_id',
+					'grt.reminder_def_id',
+					'grt.custom_text',
+					'grt.created_at',
+					'rtd.text as def_text',
+					'ch.name as def_character_name'
+				)
+				.orderBy('grt.created_at', 'asc');
 
 			const remindersByPlayer = new Map();
 			for (const t of tokens) {
 				const list = remindersByPlayer.get(t.target_player_id) ?? [];
-				console.log(t)
+				const displayText = String(t.custom_text ?? t.def_text ?? '').trim();
 				list.push({
 					id: t.id,
 					reminder_def_id: t.reminder_def_id,
-					text: t.text ?? t.custom_text,
+					text: displayText,
+					icon_character_name: t.def_character_name ?? null,
+					icon_text: t.def_text != null ? String(t.def_text) : null,
 					created_at: t.created_at
 				});
 				remindersByPlayer.set(t.target_player_id, list);
@@ -340,11 +357,99 @@ router.get('/:id', authMiddleware, async (req, res) => {
 			})
 		}
 
-		return res.sendStatus(200);
-
 	} catch (err) {
 		console.log(err);
 		return res.status(500).json({ error: 'Failed to fetch game data' });
+	}
+});
+
+// Get reminder tokens for script
+router.get('/:id/reminders', authMiddleware, async (req, res) => {
+	const user_id = req.user_id;
+	const { id } = req.params;
+
+	try {
+		const game = await db('games')
+			.where({ id, storyteller_id: user_id })
+			.first();
+
+		if (!game) {
+			return res.status(401).json({ message: 'You are not the storyteller of this game' });
+		}
+
+		if (!game.active_script_id) {
+			return res.status(200).json([]);
+		}
+
+		const rows = await db('games as g')
+			.select('rtd.id', 'rtd.text', 'rtd.character_id', 'c.name', 'sc.sort_order')
+			.join('script_characters as sc', 'sc.script_id', 'g.active_script_id')
+			.join('characters as c', 'c.id', 'sc.character_id')
+			.join('reminder_token_definitions as rtd', 'rtd.character_id', 'c.id')
+			.where('g.id', id)
+			.orderBy('sc.sort_order', 'asc')
+			.orderBy('c.name', 'asc')
+			.orderBy('rtd.text', 'asc');
+
+		return res.status(200).json(rows ?? []);
+
+	} catch (err) {
+		console.log(err);
+		return res.status(500).json({ message: 'Failed to get reminder tokens for script' });
+	}
+});
+
+router.post('/:id/reminders', authMiddleware, async (req, res) => {
+	const user_id = req.user_id;
+	const { id } = req.params;
+	const { reminder_token_id, player_id, text } = req.body;
+
+	try {
+		const game = await db('games')
+			.where({ id, storyteller_id: user_id })
+			.first();
+		if (!game) {
+			return res.status(401).json({ message: 'You are not the storyteller of this game' });
+		}
+
+		await db('game_reminder_tokens')
+			.insert({
+				game_id: id,
+				target_player_id: player_id,
+				reminder_def_id: reminder_token_id,
+				custom_text: text ?? null
+			})
+		return res.sendStatus(200);
+	} catch (err) {
+		console.log(err);
+		return res.status(500).json({ message: `Failed to place reminder token ${reminder_token_id}` })
+	}
+});
+
+/** Placed token row delete — must be registered before `DELETE /:id` (delete whole game). */
+router.delete('/:id/reminders', authMiddleware, async (req, res) => {
+	const user_id = req.user_id;
+	const { id } = req.params;
+	const { reminder_token_id } = req.body;
+
+	try {
+		const game = await db('games')
+			.where({ id, storyteller_id: user_id })
+			.first();
+		if (!game) {
+			return res.status(401).json({ message: 'You are not the storyteller of this game' });
+		}
+
+		await db('game_reminder_tokens')
+			.where({
+				id: reminder_token_id,
+				game_id: id,
+			})
+			.del();
+		return res.sendStatus(200);
+	} catch (err) {
+		console.log(err);
+		return res.status(500).json({ message: 'Failed to delete reminder token' });
 	}
 });
 
@@ -371,76 +476,5 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 		return res.status(500).json({ error: 'Failed to delete game' });
 	}
 });
-
-// Get reminder tokens for script
-router.get('/:id/reminders', authMiddleware, async (req, res) => {
-	const user_id = req.user_id;
-	const { id } = req.params;
-
-	try {
-		const rows = await db('games as g')
-			.select('rtd.id', 'rtd.text', 'rtd.character_id', 'c.name', 'sc.sort_order')
-			.join('script_characters as sc', 'sc.script_id', 'g.active_script_id')
-			.join('characters as c', 'c.id', 'sc.character_id')
-			.join('reminder_token_definitions as rtd', 'rtd.character_id', 'c.id')
-			.where({
-				'g.id': id,
-				'g.storyteller_id': user_id
-			})
-			.orderBy('sc.sort_order', 'asc')
-			.orderBy('c.name', 'asc')
-			.orderBy('rtd.text', 'asc');
-
-		console.log(rows);
-		if (!rows || rows.length === 0) {
-			return res.status(401).json({ message: 'You are not the storyteller of this game' });
-		}
-
-		return res.status(200).json(rows);
-
-	} catch (err) {
-		console.log(err);
-		return res.status(500).json({ message: 'Failed to get reminder tokens for script' });
-	}
-});
-
-router.post('/:id/reminders', authMiddleware, async (req, res) => {
-	const user_id = req.user_id;
-	const { id } = req.params;
-	const { reminder_token_id, player_id, text } = req.body;
-
-	try {
-		await db('game_reminder_tokens')
-			.insert({
-				game_id: id,
-				target_player_id: player_id,
-				reminder_def_id: reminder_token_id,
-				custom_text: text ?? null
-			})
-		return res.sendStatus(200);
-	} catch (err) {
-		console.log(err);
-		return res.status(500).json({ message: `Failed to place reminder token ${reminder_token_id}` })
-	}
-});
-
-router.delete('/:game_id/reminders', authMiddleware, async (req, res) => {
-	const user_id = req.user_id;
-	const { game_id } = req.params;
-	const { reminder_token_id } = req.body;
-
-	try {
-		await db('game_reminder_tokens')
-			.where({
-				'id': reminder_token_id,
-				'game_id': game_id
-			})
-			.del();
-		return res.sendStatus(200);
-	} catch (err) {
-		console.log(err);
-		return res.status(500).json({ message: 'Failed to delete reminder token' });
-	}
-})
 
 export default router;
