@@ -111,6 +111,23 @@ function rosterHasNoAssignedCharacters(players) {
   return true
 }
 
+function playerRowHasCharacter(p) {
+  if (!p) return false
+  if (p.character_id != null && String(p.character_id).trim() !== '') return true
+  return String(p.character_name ?? '').trim() !== ''
+}
+
+/** Seated accounts that can be PATCH-cleared (`character_id` null). */
+function playersWithClearableCharacters(players) {
+  if (!Array.isArray(players)) return []
+  return players.filter(
+    (p) =>
+      p?.user_id != null &&
+      String(p.user_id).trim() !== '' &&
+      playerRowHasCharacter(p)
+  )
+}
+
 function seatSlotsWithLoggedInPlayers(seatSlots) {
   if (!Array.isArray(seatSlots)) return []
   return seatSlots
@@ -189,6 +206,9 @@ export default function GamePage() {
   const [characterPickerPending, setCharacterPickerPending] = useState(false)
   const [characterPickerError, setCharacterPickerError] = useState(null)
   const characterPickerDialogRef = useRef(null)
+  /** In-progress storyteller: seat click opens this menu first; “Change character” opens the picker. */
+  const [seatPlayerMenuModal, setSeatPlayerMenuModal] = useState(null)
+  const seatPlayerMenuDialogRef = useRef(null)
   const [assignRolesOpen, setAssignRolesOpen] = useState(false)
   const [assignRolesSelectedIds, setAssignRolesSelectedIds] = useState([])
   const [assignRolesPending, setAssignRolesPending] = useState(false)
@@ -242,6 +262,16 @@ export default function GamePage() {
       el.close()
     }
   }, [unseatModal])
+
+  useLayoutEffect(() => {
+    const el = seatPlayerMenuDialogRef.current
+    if (!el) return
+    if (seatPlayerMenuModal) {
+      if (!el.open) el.showModal()
+    } else if (el.open) {
+      el.close()
+    }
+  }, [seatPlayerMenuModal])
 
   useLayoutEffect(() => {
     const el = characterPickerDialogRef.current
@@ -306,6 +336,7 @@ export default function GamePage() {
       setAssignRolesOpen(false)
       setAssignRolesSelectedIds([])
       setAssignRolesError(null)
+      setSeatPlayerMenuModal(null)
     }
   }, [assignRolesOpen, gameSnapshot?.game?.status, gameSnapshot?.players])
 
@@ -653,6 +684,48 @@ export default function GamePage() {
     }
   }
 
+  const performRemoveAllCharacters = async () => {
+    const s = loadGameSession()
+    if (!s || !s.isStoryteller) {
+      setConfirmAction(null)
+      return
+    }
+    const gid = s.gameId
+    const targets = playersWithClearableCharacters(gameSnapshot?.players)
+    if (targets.length === 0) {
+      setConfirmAction(null)
+      return
+    }
+    setSessionActionError(null)
+    setSessionActionPending(true)
+    try {
+      for (const p of targets) {
+        const res = await authorizedFetch(
+          `/api/games/${encodeURIComponent(gid)}/player/${encodeURIComponent(p.user_id)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ character_id: null }),
+          }
+        )
+        if (!res.ok) {
+          setSessionActionError(await readErrorMessage(res))
+          return
+        }
+      }
+      const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+      if (fresh.ok) {
+        const data = await fresh.json()
+        if (data?.game) setGameSnapshot(data)
+      }
+      setConfirmAction(null)
+    } catch {
+      setSessionActionError('Could not remove all characters.')
+    } finally {
+      setSessionActionPending(false)
+    }
+  }
+
   const performStartGame = async () => {
     const s = loadGameSession()
     if (!s || !s.isStoryteller) return
@@ -945,6 +1018,12 @@ export default function GamePage() {
       gameScriptDetailStatus === 'ok' &&
       scriptCharacterCount > 0
 
+    const showRemoveAllCharactersCta =
+      resolvedIsStoryteller &&
+      gameFetchStatus === 'ok' &&
+      gameIsInProgress &&
+      playersWithClearableCharacters(gameSnapshot?.players).length > 0
+
     return (
       <div className="page game-page">
         <h1 className="page__title">Game</h1>
@@ -1052,6 +1131,7 @@ export default function GamePage() {
                     setAssignSeatModal(null)
                     setUnseatModal(null)
                     setCharacterPickerModal(null)
+                    setSeatPlayerMenuModal(null)
                     setAssignRolesError(null)
                     setAssignRolesSelectedIds([])
                     setAssignRolesOpen(true)
@@ -1061,12 +1141,26 @@ export default function GamePage() {
                   Assign roles
                 </button>
               )}
+              {showRemoveAllCharactersCta && (
+                <button
+                  type="button"
+                  className="game-page__script-picker-open-btn"
+                  onClick={() => {
+                    setSessionActionError(null)
+                    setConfirmAction('removeAllCharacters')
+                  }}
+                  disabled={sessionActionPending || startGamePending || assignRolesPending}
+                >
+                  Remove all characters
+                </button>
+              )}
               <button
                 type="button"
                 className="game-page__script-picker-open-btn"
                 onClick={() => {
                   setAssignSeatModal(null)
                   setUnseatModal(null)
+                  setSeatPlayerMenuModal(null)
                   setScriptPatchError(null)
                   setScriptSearchError(null)
                   setScriptSearchInput('')
@@ -1161,7 +1255,7 @@ export default function GamePage() {
                         aria-label={
                           useCharacterPickerOnSeatClick
                             ? player && !filledWithoutUser
-                              ? `${ariaTaken}. Choose a character for this player.`
+                              ? `${ariaTaken}. Open seat options.`
                               : ariaEmpty
                             : player
                               ? filledWithoutUser
@@ -1178,7 +1272,7 @@ export default function GamePage() {
                             setAssignSeatModal(null)
                             setUnseatModal(null)
                             if (!player || filledWithoutUser) return
-                            setCharacterPickerModal({
+                            setSeatPlayerMenuModal({
                               seatNum,
                               userId: player.user_id,
                               playerLabel: playerDisplayLabel(player, seatNum),
@@ -1189,11 +1283,13 @@ export default function GamePage() {
 
                           if (!player) {
                             setUnseatModal(null)
+                            setSeatPlayerMenuModal(null)
                             setAssignSeatModal({ seatNum })
                             return
                           }
                           if (filledWithoutUser) return
                           setAssignSeatModal(null)
+                          setSeatPlayerMenuModal(null)
                           setUnseatModal({
                             seatNum,
                             userId: player.user_id,
@@ -1247,7 +1343,20 @@ export default function GamePage() {
                 </p>
               </>
             )}
-            {(confirmAction === 'leave' || confirmAction === 'endGame') && (
+            {confirmAction === 'removeAllCharacters' && (
+              <>
+                <h2 id="game-confirm-title" className="game-page__confirm-title">
+                  Remove all characters?
+                </h2>
+                <p className="game-page__confirm-body">
+                  Every seated player will lose their assigned script role. You can use Assign roles again
+                  afterward.
+                </p>
+              </>
+            )}
+            {(confirmAction === 'leave' ||
+              confirmAction === 'endGame' ||
+              confirmAction === 'removeAllCharacters') && (
               <div className="game-page__confirm-actions">
                 <button
                   type="button"
@@ -1260,23 +1369,28 @@ export default function GamePage() {
                 <button
                   type="button"
                   className={
-                    confirmAction === 'endGame'
+                    confirmAction === 'endGame' || confirmAction === 'removeAllCharacters'
                       ? 'game-page__confirm-danger'
                       : 'game-page__confirm-primary'
                   }
                   disabled={sessionActionPending}
                   onClick={() => {
                     if (confirmAction === 'leave') void performLeaveGame()
-                    else void performEndGame()
+                    else if (confirmAction === 'endGame') void performEndGame()
+                    else void performRemoveAllCharacters()
                   }}
                 >
                   {sessionActionPending
                     ? confirmAction === 'endGame'
                       ? 'Ending…'
-                      : 'Leaving…'
+                      : confirmAction === 'removeAllCharacters'
+                        ? 'Removing…'
+                        : 'Leaving…'
                     : confirmAction === 'endGame'
                       ? 'End game'
-                      : 'Leave game'}
+                      : confirmAction === 'removeAllCharacters'
+                        ? 'Remove all'
+                        : 'Leave game'}
                 </button>
               </div>
             )}
@@ -1391,12 +1505,65 @@ export default function GamePage() {
           </dialog>
 
           <dialog
+            ref={seatPlayerMenuDialogRef}
+            className="game-page__assign-dialog"
+            onClose={() => setSeatPlayerMenuModal(null)}
+            aria-labelledby="seat-player-menu-title"
+          >
+            {seatPlayerMenuModal && (
+              <>
+                <h2 id="seat-player-menu-title" className="game-page__assign-dialog-title">
+                  Seat {seatPlayerMenuModal.seatNum}
+                </h2>
+                <p className="game-page__assign-dialog-hint">
+                  <strong>{seatPlayerMenuModal.playerLabel}</strong>
+                </p>
+                <ul className="game-page__assign-dialog-list game-page__seat-player-menu-list">
+                  <li>
+                    <button
+                      type="button"
+                      className="game-page__assign-dialog-player"
+                      onClick={() => {
+                        const m = seatPlayerMenuModal
+                        if (!m) return
+                        setSeatPlayerMenuModal(null)
+                        setCharacterPickerError(null)
+                        setCharacterPickerModal({
+                          seatNum: m.seatNum,
+                          userId: m.userId,
+                          playerLabel: m.playerLabel,
+                          assignedCharacterId: m.assignedCharacterId,
+                        })
+                      }}
+                    >
+                      <span className="game-page__assign-dialog-player-name">Change character</span>
+                      <span className="game-page__assign-dialog-player-meta">
+                        Pick or clear a script role for this player
+                      </span>
+                    </button>
+                  </li>
+                </ul>
+                <div className="game-page__assign-dialog-actions">
+                  <button
+                    type="button"
+                    className="game-page__confirm-cancel"
+                    onClick={() => setSeatPlayerMenuModal(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </dialog>
+
+          <dialog
             ref={characterPickerDialogRef}
             tabIndex={-1}
             className="game-page__assign-dialog game-page__character-dialog"
             onClose={() => {
               setCharacterPickerModal(null)
               setCharacterPickerError(null)
+              setSeatPlayerMenuModal(null)
             }}
             aria-labelledby="character-picker-title"
           >
