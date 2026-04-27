@@ -89,6 +89,74 @@ function formatCharacterType(type) {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
+function shuffleArray(items) {
+  const a = [...items]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const t = a[i]
+    a[i] = a[j]
+    a[j] = t
+  }
+  return a
+}
+
+/** True when every seated account has no character yet (storyteller bulk assign flow). */
+function rosterHasNoAssignedCharacters(players) {
+  if (!Array.isArray(players)) return true
+  for (const p of players) {
+    if (!p?.user_id || String(p.user_id).trim() === '') continue
+    if (p.character_id != null && String(p.character_id).trim() !== '') return false
+    if (String(p.character_name ?? '').trim() !== '') return false
+  }
+  return true
+}
+
+function seatSlotsWithLoggedInPlayers(seatSlots) {
+  if (!Array.isArray(seatSlots)) return []
+  return seatSlots
+    .filter(
+      ({ player }) => player && player.user_id != null && String(player.user_id).trim() !== ''
+    )
+    .sort((a, b) => a.seatNum - b.seatNum)
+}
+
+/** Picks `assignableCount` distinct script character ids; tries Trouble Brewing–style counts first. */
+function buildRandomRoleSelection(scriptCharacters, assignableCount) {
+  const flat = (Array.isArray(scriptCharacters) ? scriptCharacters : []).filter((c) => c?.id != null)
+  if (assignableCount <= 0 || flat.length === 0) return []
+
+  const selectedIds = []
+  const used = new Set()
+
+  const takeRandom = (pool, n) => {
+    if (n <= 0) return
+    const shuffled = shuffleArray(pool)
+    let taken = 0
+    for (const c of shuffled) {
+      if (taken >= n) break
+      const id = String(c.id)
+      if (used.has(id)) continue
+      used.add(id)
+      selectedIds.push(id)
+      taken++
+    }
+  }
+
+  const comp = defaultCompositionForPlayerCount(assignableCount)
+  if (comp) {
+    const coreOrder = ['townsfolk', 'outsider', 'minion', 'demon']
+    for (const t of coreOrder) {
+      const pool = flat.filter((c) => String(c.type ?? '').trim().toLowerCase() === t)
+      takeRandom(pool, comp[t] ?? 0)
+    }
+  }
+
+  const restPool = flat.filter((c) => !used.has(String(c.id)))
+  takeRandom(restPool, assignableCount - selectedIds.length)
+
+  return selectedIds.slice(0, assignableCount)
+}
+
 export default function GamePage() {
   const { isAuthenticated, authorizedFetch } = useAuth()
   const { setScriptDetail: setPanelScriptDetail } = useGameScriptPanel()
@@ -121,6 +189,11 @@ export default function GamePage() {
   const [characterPickerPending, setCharacterPickerPending] = useState(false)
   const [characterPickerError, setCharacterPickerError] = useState(null)
   const characterPickerDialogRef = useRef(null)
+  const [assignRolesOpen, setAssignRolesOpen] = useState(false)
+  const [assignRolesSelectedIds, setAssignRolesSelectedIds] = useState([])
+  const [assignRolesPending, setAssignRolesPending] = useState(false)
+  const [assignRolesError, setAssignRolesError] = useState(null)
+  const assignRolesDialogRef = useRef(null)
 
   /** Loaded from `GET /api/scripts/:id` when the game has `script_id` (for upcoming UI). */
   const [gameScriptDetail, setGameScriptDetail] = useState(null)
@@ -194,6 +267,27 @@ export default function GamePage() {
   }, [characterPickerModal])
 
   useLayoutEffect(() => {
+    const el = assignRolesDialogRef.current
+    if (!el) return
+    if (assignRolesOpen) {
+      if (!el.open) el.showModal()
+      const raf = { outer: 0, inner: 0 }
+      raf.outer = window.requestAnimationFrame(() => {
+        raf.inner = window.requestAnimationFrame(() => {
+          const d = assignRolesDialogRef.current
+          if (d?.open) d.focus({ preventScroll: true })
+        })
+      })
+      return () => {
+        window.cancelAnimationFrame(raf.outer)
+        window.cancelAnimationFrame(raf.inner)
+      }
+    } else if (el.open) {
+      el.close()
+    }
+  }, [assignRolesOpen])
+
+  useLayoutEffect(() => {
     const el = scriptPickerDialogRef.current
     if (!el) return
     if (scriptPickerOpen) {
@@ -202,6 +296,18 @@ export default function GamePage() {
       el.close()
     }
   }, [scriptPickerOpen])
+
+  useEffect(() => {
+    if (!assignRolesOpen) return
+    if (
+      gameSnapshot?.game?.status !== 'in_progress' ||
+      !rosterHasNoAssignedCharacters(gameSnapshot?.players)
+    ) {
+      setAssignRolesOpen(false)
+      setAssignRolesSelectedIds([])
+      setAssignRolesError(null)
+    }
+  }, [assignRolesOpen, gameSnapshot?.game?.status, gameSnapshot?.players])
 
   useEffect(() => {
     const rawId = gameSnapshot?.game?.script_id
@@ -683,6 +789,43 @@ export default function GamePage() {
     [session?.gameId, authorizedFetch]
   )
 
+  const bulkAssignRolesToPlayers = useCallback(
+    async (pairs) => {
+      const gid = session?.gameId
+      if (!gid || !Array.isArray(pairs) || pairs.length === 0) return
+      setAssignRolesError(null)
+      setAssignRolesPending(true)
+      try {
+        for (const { userId, characterId } of pairs) {
+          const res = await authorizedFetch(
+            `/api/games/${encodeURIComponent(gid)}/player/${encodeURIComponent(userId)}`,
+            {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ character_id: characterId }),
+            }
+          )
+          if (!res.ok) {
+            setAssignRolesError(await readErrorMessage(res))
+            return
+          }
+        }
+        const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+        if (fresh.ok) {
+          const data = await fresh.json()
+          if (data?.game) setGameSnapshot(data)
+        }
+        setAssignRolesOpen(false)
+        setAssignRolesSelectedIds([])
+      } catch {
+        setAssignRolesError('Could not assign roles.')
+      } finally {
+        setAssignRolesPending(false)
+      }
+    },
+    [session?.gameId, authorizedFetch]
+  )
+
   const applyGameScript = useCallback(
     async (scriptId) => {
       const gid = session?.gameId
@@ -787,6 +930,21 @@ export default function GamePage() {
     const defaultComposition =
       gameFetchStatus === 'ok' ? defaultCompositionForPlayerCount(seatCount) : null
 
+    const seatsForRoleAssignment = seatSlotsWithLoggedInPlayers(seatSlots)
+    const assignableCount = seatsForRoleAssignment.length
+    const scriptCharacterCount = Array.isArray(gameScriptDetail?.characters)
+      ? gameScriptDetail.characters.length
+      : 0
+    const scriptHasEnoughCharacters = scriptCharacterCount >= assignableCount
+    const showAssignRolesCta =
+      resolvedIsStoryteller &&
+      gameFetchStatus === 'ok' &&
+      gameIsInProgress &&
+      assignableCount > 0 &&
+      rosterHasNoAssignedCharacters(gameSnapshot?.players) &&
+      gameScriptDetailStatus === 'ok' &&
+      scriptCharacterCount > 0
+
     return (
       <div className="page game-page">
         <h1 className="page__title">Game</h1>
@@ -876,14 +1034,33 @@ export default function GamePage() {
 
           {resolvedIsStoryteller ? (
             <div className="game-page__story-actions">
-              <button
-                type="button"
-                className="game-page__script-picker-open-btn"
-                onClick={() => void performStartGame()}
-                disabled={sessionActionPending || startGamePending || !canStartGame}
-              >
-                {startGamePending ? 'Starting…' : 'Start game'}
-              </button>
+              {gameSnapshot?.game?.status === 'lobby' && (
+                <button
+                  type="button"
+                  className="game-page__script-picker-open-btn"
+                  onClick={() => void performStartGame()}
+                  disabled={sessionActionPending || startGamePending || !canStartGame}
+                >
+                  {startGamePending ? 'Starting…' : 'Start game'}
+                </button>
+              )}
+              {showAssignRolesCta && (
+                <button
+                  type="button"
+                  className="game-page__script-picker-open-btn"
+                  onClick={() => {
+                    setAssignSeatModal(null)
+                    setUnseatModal(null)
+                    setCharacterPickerModal(null)
+                    setAssignRolesError(null)
+                    setAssignRolesSelectedIds([])
+                    setAssignRolesOpen(true)
+                  }}
+                  disabled={sessionActionPending || startGamePending || assignRolesPending}
+                >
+                  Assign roles
+                </button>
+              )}
               <button
                 type="button"
                 className="game-page__script-picker-open-btn"
@@ -1310,6 +1487,170 @@ export default function GamePage() {
                     disabled={characterPickerPending}
                   >
                     Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </dialog>
+
+          <dialog
+            ref={assignRolesDialogRef}
+            tabIndex={-1}
+            className="game-page__assign-dialog game-page__character-dialog game-page__assign-roles-dialog"
+            onClose={() => {
+              setAssignRolesOpen(false)
+              setAssignRolesSelectedIds([])
+              setAssignRolesError(null)
+            }}
+            aria-labelledby="assign-roles-title"
+          >
+            {assignRolesOpen && (
+              <>
+                <h2 id="assign-roles-title" className="game-page__assign-dialog-title">
+                  Assign roles
+                </h2>
+                <p className="game-page__assign-dialog-hint">
+                  Choose exactly {assignableCount} roles from this script (one per seated player). You can
+                  tap roles to add or remove them. When you are ready, roles are shuffled and dealt to
+                  seats at random.
+                </p>
+                {(() => {
+                  const comp = defaultCompositionForPlayerCount(assignableCount)
+                  if (!comp) {
+                    return (
+                      <p className="game-page__assign-dialog-hint game-page__assign-dialog-hint--sub">
+                        Randomize picks {assignableCount} distinct roles from the script at random (official
+                        defaults start at 5 players).
+                      </p>
+                    )
+                  }
+                  return (
+                    <p className="game-page__assign-dialog-hint game-page__assign-dialog-hint--sub">
+                      Randomize aims for Trouble Brewing defaults at this size: {comp.townsfolk} townsfolk,{' '}
+                      {comp.outsider} outsider{comp.outsider === 1 ? '' : 's'}, {comp.minion} minion
+                      {comp.minion === 1 ? '' : 's'}, {comp.demon} demon — then fills from whatever is left
+                      on the script if needed.
+                    </p>
+                  )
+                })()}
+                {!scriptHasEnoughCharacters && (
+                  <p className="game-page__assign-dialog-error" role="status">
+                    This script only has {scriptCharacterCount} character
+                    {scriptCharacterCount === 1 ? '' : 's'}, but {assignableCount} seated players need
+                    assignments. Add characters to the script or change seats before you can assign everyone.
+                  </p>
+                )}
+                {assignRolesError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {assignRolesError}
+                  </p>
+                )}
+                <div className="game-page__assign-dialog-random-row">
+                  <button
+                    type="button"
+                    className="game-page__script-picker-open-btn game-page__assign-dialog-random-btn"
+                    disabled={assignRolesPending || assignableCount === 0}
+                    onClick={() => {
+                      setAssignRolesError(null)
+                      setAssignRolesSelectedIds(
+                        buildRandomRoleSelection(gameScriptDetail?.characters ?? [], assignableCount)
+                      )
+                    }}
+                  >
+                    Randomize roles
+                  </button>
+                </div>
+                {gameScriptDetailStatus === 'ok' && charactersByType.length > 0 && (
+                  <div className="game-page__character-groups">
+                    {charactersByType.map(({ type, characters }) => (
+                      <section key={type} className="game-page__character-group">
+                        <h3 className="game-page__character-group-title">{formatCharacterType(type)}</h3>
+                        <ul className="game-page__character-grid">
+                          {characters.map((c) => {
+                            const iconSrc = getCharacterIconSrc(c)
+                            const sid = String(c.id)
+                            const isPicked = assignRolesSelectedIds.includes(sid)
+                            const atCap =
+                              !isPicked &&
+                              assignRolesSelectedIds.length >= assignableCount &&
+                              assignableCount > 0
+                            return (
+                              <li key={c.id}>
+                                <button
+                                  type="button"
+                                  className={`game-page__character-item${isPicked ? ' game-page__character-item--picked' : ''}`}
+                                  aria-pressed={isPicked}
+                                  disabled={assignRolesPending || atCap}
+                                  title={atCap ? 'Remove a role or clear the selection to pick another.' : undefined}
+                                  onClick={() => {
+                                    setAssignRolesError(null)
+                                    setAssignRolesSelectedIds((prev) => {
+                                      if (prev.includes(sid)) return prev.filter((x) => x !== sid)
+                                      if (prev.length >= assignableCount) return prev
+                                      return [...prev, sid]
+                                    })
+                                  }}
+                                >
+                                  {iconSrc ? (
+                                    <img
+                                      className="game-page__character-item-icon"
+                                      src={iconSrc}
+                                      alt=""
+                                      width={44}
+                                      height={44}
+                                      loading="lazy"
+                                      decoding="async"
+                                    />
+                                  ) : (
+                                    <div
+                                      className="game-page__character-item-icon game-page__character-item-icon--placeholder"
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  <span className="game-page__character-item-name">{c.name}</span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </section>
+                    ))}
+                  </div>
+                )}
+                <p className="game-page__assign-dialog-selection-count" aria-live="polite">
+                  {assignRolesSelectedIds.length} of {assignableCount} selected
+                </p>
+                <div className="game-page__assign-dialog-actions game-page__assign-dialog-actions--split">
+                  <button
+                    type="button"
+                    className="game-page__confirm-cancel"
+                    onClick={() => {
+                      setAssignRolesOpen(false)
+                      setAssignRolesSelectedIds([])
+                      setAssignRolesError(null)
+                    }}
+                    disabled={assignRolesPending}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="game-page__confirm-primary"
+                    disabled={
+                      assignRolesPending ||
+                      assignRolesSelectedIds.length !== assignableCount ||
+                      assignableCount === 0
+                    }
+                    onClick={() => {
+                      const shuffled = shuffleArray([...assignRolesSelectedIds])
+                      const pairs = seatsForRoleAssignment.map((slot, i) => ({
+                        userId: slot.player.user_id,
+                        characterId: shuffled[i],
+                      }))
+                      void bulkAssignRolesToPlayers(pairs)
+                    }}
+                  >
+                    {assignRolesPending ? 'Assigning…' : 'Assign roles'}
                   </button>
                 </div>
               </>

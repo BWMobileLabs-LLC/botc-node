@@ -724,6 +724,28 @@ button.game-page__seat:focus-visible {
   justify-content: space-between;
 }
 
+.game-page__assign-dialog-hint--sub {
+  margin-top: -0.45rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.8125rem;
+}
+
+.game-page__assign-dialog-random-row {
+  margin: 0 0 0.85rem;
+}
+
+.game-page__assign-dialog-random-btn {
+  width: 100%;
+}
+
+.game-page__assign-dialog-selection-count {
+  margin: 0.65rem 0 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: right;
+  color: var(--muted);
+}
+
 .game-page__character-dialog {
   max-width: min(44rem, calc(100vw - 2rem));
   max-height: min(78vh, 42rem);
@@ -788,6 +810,16 @@ button.game-page__seat:focus-visible {
 }
 
 .game-page__character-item--assigned:hover:not(:disabled) {
+  border-color: var(--layout-focus);
+}
+
+.game-page__character-item--picked {
+  border-color: var(--layout-focus);
+  box-shadow: 0 0 0 1px var(--layout-focus);
+  background: var(--layout-hover);
+}
+
+.game-page__character-item--picked:hover:not(:disabled) {
   border-color: var(--layout-focus);
 }
 
