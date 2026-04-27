@@ -6,6 +6,7 @@ import { useAuth } from '../auth/useAuth.js'
 import { useGameScriptPanel } from '../context/GameScriptPanelContext.jsx'
 import { clearGameSession, loadGameSession, saveGameSession } from '../game/gameSession.js'
 import { getCharacterIconSrc } from '../utils/characterIcon.js'
+import { getReminderTokenIconSrc } from '../utils/reminderTokenIcon.js'
 
 function gameIdFromApiBody(raw) {
   if (raw == null) return ''
@@ -209,6 +210,10 @@ export default function GamePage() {
   /** In-progress storyteller: seat click opens this menu first; “Change character” opens the picker. */
   const [seatPlayerMenuModal, setSeatPlayerMenuModal] = useState(null)
   const seatPlayerMenuDialogRef = useRef(null)
+  const [seatMenuReminderDefs, setSeatMenuReminderDefs] = useState(null)
+  const [seatMenuReminderDefsStatus, setSeatMenuReminderDefsStatus] = useState('idle')
+  const [seatMenuReminderDefsError, setSeatMenuReminderDefsError] = useState(null)
+  const [placeReminderTokenPendingId, setPlaceReminderTokenPendingId] = useState(null)
   const [assignRolesOpen, setAssignRolesOpen] = useState(false)
   const [assignRolesSelectedIds, setAssignRolesSelectedIds] = useState([])
   const [assignRolesPending, setAssignRolesPending] = useState(false)
@@ -821,6 +826,115 @@ export default function GamePage() {
     [session?.gameId, authorizedFetch]
   )
 
+  const fetchSeatMenuReminderDefinitions = useCallback(async () => {
+    const gid = session?.gameId
+    if (!gid) return
+    setSeatMenuReminderDefsError(null)
+    setSeatMenuReminderDefsStatus('loading')
+    try {
+      const res = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}/reminders`)
+      if (!res.ok) {
+        setSeatMenuReminderDefs(null)
+        setSeatMenuReminderDefsError(await readErrorMessage(res))
+        setSeatMenuReminderDefsStatus('error')
+        return
+      }
+      const data = await res.json()
+      setSeatMenuReminderDefs(Array.isArray(data) ? data : [])
+      setSeatMenuReminderDefsStatus('ok')
+    } catch {
+      setSeatMenuReminderDefs(null)
+      setSeatMenuReminderDefsError('Could not load reminder tokens.')
+      setSeatMenuReminderDefsStatus('error')
+    }
+  }, [session?.gameId, authorizedFetch])
+
+  const closeSeatPlayerMenuModal = useCallback(() => {
+    setSeatPlayerMenuModal(null)
+    setSeatMenuReminderDefs(null)
+    setSeatMenuReminderDefsStatus('idle')
+    setSeatMenuReminderDefsError(null)
+    setPlaceReminderTokenPendingId(null)
+  }, [])
+
+  const placeReminderTokenForSeatMenu = useCallback(
+    async (reminderDefId, gamePlayerRowId) => {
+      const gid = session?.gameId
+      if (!gid || reminderDefId == null || gamePlayerRowId == null) return
+      setPlaceReminderTokenPendingId(String(reminderDefId))
+      setSeatMenuReminderDefsError(null)
+      try {
+        const res = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}/reminders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reminder_token_id: reminderDefId,
+            player_id: gamePlayerRowId,
+          }),
+        })
+        if (!res.ok) {
+          setSeatMenuReminderDefsError(await readErrorMessage(res))
+          return
+        }
+        const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+        if (fresh.ok) {
+          const data = await fresh.json()
+          if (data?.game) setGameSnapshot(data)
+        }
+        closeSeatPlayerMenuModal()
+      } catch {
+        setSeatMenuReminderDefsError('Could not place reminder token.')
+      } finally {
+        setPlaceReminderTokenPendingId(null)
+      }
+    },
+    [session?.gameId, authorizedFetch, closeSeatPlayerMenuModal]
+  )
+
+  const deletePlacedReminderToken = useCallback(
+    async (placedReminderRowId) => {
+      const gid = session?.gameId
+      if (!gid || placedReminderRowId == null) return
+      const idStr = String(placedReminderRowId)
+
+      setGameSnapshot((prev) => {
+        if (!prev?.players) return prev
+        return {
+          ...prev,
+          players: prev.players.map((p) => {
+            if (!Array.isArray(p.reminder)) return p
+            const next = p.reminder.filter((r) => String(r.id) !== idStr)
+            return next.length === p.reminder.length ? p : { ...p, reminder: next }
+          }),
+        }
+      })
+
+      const rollback = async () => {
+        try {
+          const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+          if (fresh.ok) {
+            const data = await fresh.json()
+            if (data?.game) setGameSnapshot(data)
+          }
+        } catch {
+          /* keep optimistic state if refetch fails */
+        }
+      }
+
+      try {
+        const res = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}/reminders`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reminder_token_id: placedReminderRowId }),
+        })
+        if (!res.ok) void rollback()
+      } catch {
+        void rollback()
+      }
+    },
+    [session?.gameId, authorizedFetch]
+  )
+
   const assignCharacterToPlayer = useCallback(
     async (userId, characterId) => {
       const gid = session?.gameId
@@ -1216,6 +1330,11 @@ export default function GamePage() {
                       : null
                   const assignedCharacterIcon = assignedCharacter ? getCharacterIconSrc(assignedCharacter) : null
 
+                  const seatReminders =
+                    resolvedIsStoryteller && player && Array.isArray(player.reminder)
+                      ? player.reminder
+                      : []
+
                   const inner = player ? (
                     <>
                       <div className="game-page__seat-icon" aria-hidden="true">
@@ -1234,6 +1353,68 @@ export default function GamePage() {
                       <span className="game-page__seat-label">
                         {playerDisplayLabel(player, seatNum)}
                       </span>
+                      {seatReminders.length > 0 && (
+                        <div className="game-page__seat-reminders">
+                          {seatReminders.map((r, ri) => {
+                            const iconChar = String(
+                              r.icon_character_name ?? player.character_name ?? ''
+                            ).trim()
+                            const iconText = String(r.icon_text ?? r.text ?? '').trim()
+                            const tokenImg =
+                              iconChar || iconText
+                                ? getReminderTokenIconSrc(
+                                    iconChar || String(player.character_name ?? '').trim(),
+                                    iconText
+                                  )
+                                : null
+                            const removeLabel =
+                              iconText ||
+                              String(r.text ?? '')
+                                .trim()
+                                .slice(0, 48) ||
+                              'reminder token'
+                            const rid = String(r.id)
+                            return (
+                              <div
+                                key={rid}
+                                role="button"
+                                tabIndex={0}
+                                className="game-page__seat-reminder-chip"
+                                style={{ '--rm-i': ri }}
+                                aria-label={`Remove ${removeLabel}`}
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  void deletePlacedReminderToken(r.id)
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key !== 'Enter' && e.key !== ' ') return
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  void deletePlacedReminderToken(r.id)
+                                }}
+                              >
+                                {tokenImg ? (
+                                  <img
+                                    className="game-page__seat-reminder-img"
+                                    src={tokenImg}
+                                    alt=""
+                                    width={76}
+                                    height={76}
+                                    loading="lazy"
+                                    decoding="async"
+                                    draggable={false}
+                                  />
+                                ) : (
+                                  <span className="game-page__seat-reminder-fallback" aria-hidden="true">
+                                    ·
+                                  </span>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className="game-page__seat-icon game-page__seat-icon--empty" aria-hidden="true">
@@ -1275,8 +1456,10 @@ export default function GamePage() {
                             setSeatPlayerMenuModal({
                               seatNum,
                               userId: player.user_id,
+                              gamePlayerId: player.id,
                               playerLabel: playerDisplayLabel(player, seatNum),
                               assignedCharacterId: player.character_id ?? null,
+                              view: 'actions',
                             })
                             return
                           }
@@ -1506,11 +1689,97 @@ export default function GamePage() {
 
           <dialog
             ref={seatPlayerMenuDialogRef}
-            className="game-page__assign-dialog"
-            onClose={() => setSeatPlayerMenuModal(null)}
-            aria-labelledby="seat-player-menu-title"
+            className={`game-page__assign-dialog${seatPlayerMenuModal?.view === 'reminders' ? ' game-page__assign-dialog--seat-reminders' : ''}`}
+            onClose={closeSeatPlayerMenuModal}
+            aria-labelledby={
+              seatPlayerMenuModal?.view === 'reminders'
+                ? 'seat-player-reminders-title'
+                : 'seat-player-menu-title'
+            }
           >
-            {seatPlayerMenuModal && (
+            {seatPlayerMenuModal && seatPlayerMenuModal.view === 'reminders' && (
+              <>
+                <button
+                  type="button"
+                  className="game-page__seat-menu-back"
+                  onClick={() => {
+                    setSeatPlayerMenuModal((m) => (m ? { ...m, view: 'actions' } : null))
+                    setSeatMenuReminderDefsError(null)
+                  }}
+                >
+                  ← Back
+                </button>
+                <h2 id="seat-player-reminders-title" className="game-page__assign-dialog-title">
+                  Add reminder token
+                </h2>
+                <p className="game-page__assign-dialog-hint">
+                  For <strong>{seatPlayerMenuModal.playerLabel}</strong> — choose a token from this script.
+                </p>
+                {seatMenuReminderDefsError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {seatMenuReminderDefsError}
+                  </p>
+                )}
+                {seatMenuReminderDefsStatus === 'loading' && (
+                  <p className="game-page__assign-dialog-hint">Loading reminder tokens…</p>
+                )}
+                {seatMenuReminderDefsStatus === 'ok' &&
+                  Array.isArray(seatMenuReminderDefs) &&
+                  seatMenuReminderDefs.length === 0 && (
+                    <p className="game-page__assign-dialog-empty">
+                      No reminder tokens are defined for characters on this script.
+                    </p>
+                  )}
+                {seatMenuReminderDefsStatus === 'ok' && (seatMenuReminderDefs?.length ?? 0) > 0 && (
+                  <ul className="game-page__assign-dialog-list game-page__seat-menu-reminder-defs">
+                    {seatMenuReminderDefs.map((def) => {
+                      const rid = String(def.id)
+                      const busy = placeReminderTokenPendingId === rid
+                      const tokenImg = getReminderTokenIconSrc(def.name, def.text)
+                      return (
+                        <li key={rid}>
+                          <button
+                            type="button"
+                            className="game-page__assign-dialog-player game-page__seat-menu-reminder-def-btn"
+                            disabled={busy || seatMenuReminderDefsStatus !== 'ok'}
+                            onClick={() =>
+                              void placeReminderTokenForSeatMenu(def.id, seatPlayerMenuModal.gamePlayerId)
+                            }
+                          >
+                            {tokenImg ? (
+                              <img
+                                className="game-page__seat-menu-reminder-img"
+                                src={tokenImg}
+                                alt=""
+                                width={48}
+                                height={48}
+                                loading="lazy"
+                                decoding="async"
+                              />
+                            ) : (
+                              <div
+                                className="game-page__seat-menu-reminder-img game-page__seat-menu-reminder-img--placeholder"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <span className="game-page__seat-menu-reminder-def-text">
+                              <span className="game-page__assign-dialog-player-name">{def.name}</span>
+                              <span className="game-page__assign-dialog-player-meta">{def.text}</span>
+                            </span>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+                <div className="game-page__assign-dialog-actions">
+                  <button type="button" className="game-page__confirm-cancel" onClick={closeSeatPlayerMenuModal}>
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
+            {seatPlayerMenuModal && seatPlayerMenuModal.view !== 'reminders' && (
               <>
                 <h2 id="seat-player-menu-title" className="game-page__assign-dialog-title">
                   Seat {seatPlayerMenuModal.seatNum}
@@ -1527,6 +1796,10 @@ export default function GamePage() {
                         const m = seatPlayerMenuModal
                         if (!m) return
                         setSeatPlayerMenuModal(null)
+                        setSeatMenuReminderDefs(null)
+                        setSeatMenuReminderDefsStatus('idle')
+                        setSeatMenuReminderDefsError(null)
+                        setPlaceReminderTokenPendingId(null)
                         setCharacterPickerError(null)
                         setCharacterPickerModal({
                           seatNum: m.seatNum,
@@ -1542,12 +1815,40 @@ export default function GamePage() {
                       </span>
                     </button>
                   </li>
+                  <li>
+                    <button
+                      type="button"
+                      className="game-page__assign-dialog-player"
+                      disabled={!seatPlayerMenuModal.gamePlayerId}
+                      title={
+                        !seatPlayerMenuModal.gamePlayerId
+                          ? 'Player record is missing; rejoin the game or refresh.'
+                          : undefined
+                      }
+                      onClick={() => {
+                        setSeatPlayerMenuModal((m) => (m ? { ...m, view: 'reminders' } : null))
+                        setSeatMenuReminderDefsError(null)
+                        void fetchSeatMenuReminderDefinitions()
+                      }}
+                    >
+                      <span className="game-page__assign-dialog-player-name">Add reminder token</span>
+                      <span className="game-page__assign-dialog-player-meta">
+                        Place a script reminder on this player
+                      </span>
+                    </button>
+                  </li>
                 </ul>
                 <div className="game-page__assign-dialog-actions">
                   <button
                     type="button"
                     className="game-page__confirm-cancel"
-                    onClick={() => setSeatPlayerMenuModal(null)}
+                    onClick={() => {
+                      setSeatPlayerMenuModal(null)
+                      setSeatMenuReminderDefs(null)
+                      setSeatMenuReminderDefsStatus('idle')
+                      setSeatMenuReminderDefsError(null)
+                      setPlaceReminderTokenPendingId(null)
+                    }}
                   >
                     Cancel
                   </button>

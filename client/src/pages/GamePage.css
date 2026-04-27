@@ -277,6 +277,9 @@
   align-items: center;
   gap: 0.5rem;
   width: clamp(7.5rem, 24vw, 11rem);
+  /* Clockwise angle from “top” seat; used to nudge reminder art toward ring centre */
+  --seat-angle: calc(360deg * var(--seat-i) / var(--seat-n));
+  /* Reminder tokens are absolutely positioned so they never change orbit geometry */
   /* Seat 1 (--seat-i: 0) at top; higher indices go clockwise. */
   transform: translate(-50%, -50%)
     rotate(calc(360deg * var(--seat-i) / var(--seat-n)))
@@ -303,6 +306,82 @@
   width: clamp(3.2rem, 10vw, 4.4rem);
   height: clamp(3.2rem, 10vw, 4.4rem);
   object-fit: contain;
+}
+
+/* Placed reminder tokens: out of flow, shifted from seat centre toward ring centre */
+.game-page__seat-reminders {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  /* Larger = further toward ring centre, clearer gap from portrait + name */
+  --ring-in: min(6.875rem, calc(var(--orbit) * 0.47));
+  --reminder-chip-size: clamp(3.1rem, 10.5vw, 4.75rem);
+  /* Centre distance ≈72% of width ≈28% diameter overlap; older reminders first in list stay nearer portrait */
+  --reminder-stack-step: calc(var(--reminder-chip-size) * 0.72);
+  transform: translate(-50%, -50%)
+    translate(
+      calc(-1 * sin(var(--seat-angle)) * var(--ring-in)),
+      calc(cos(var(--seat-angle)) * var(--ring-in))
+    );
+  pointer-events: none;
+}
+
+.game-page__seat-reminders .game-page__seat-reminder-chip {
+  pointer-events: auto;
+}
+
+.game-page__seat-reminder-chip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--reminder-chip-size);
+  height: var(--reminder-chip-size);
+  box-sizing: border-box;
+  cursor: pointer;
+  border-radius: 50%;
+  --stack-hub: calc(var(--reminder-stack-step) * var(--rm-i, 0));
+  transform: translate(-50%, -50%)
+    translate(
+      calc(-1 * sin(var(--seat-angle)) * var(--stack-hub)),
+      calc(cos(var(--seat-angle)) * var(--stack-hub))
+    );
+  z-index: calc(5 + var(--rm-i, 0));
+}
+
+.game-page__seat-reminder-chip:hover {
+  filter: brightness(1.08);
+}
+
+.game-page__seat-reminder-chip:focus {
+  outline: none;
+}
+
+.game-page__seat-reminder-chip:focus-visible {
+  outline: 2px solid var(--layout-focus);
+  outline-offset: 2px;
+}
+
+.game-page__seat-reminder-img {
+  display: block;
+  width: var(--reminder-chip-size);
+  height: var(--reminder-chip-size);
+  object-fit: contain;
+}
+
+.game-page__seat-reminder-fallback {
+  display: block;
+  width: var(--reminder-chip-size);
+  height: var(--reminder-chip-size);
+  line-height: var(--reminder-chip-size);
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--muted);
 }
 
 .game-page__seat-icon--empty {
@@ -410,6 +489,19 @@ button.game-page__seat:focus-visible {
     justify-content: flex-start;
     gap: 0.85rem;
     transform: none;
+  }
+
+  .game-page__seat-reminders {
+    left: 50%;
+    top: 100%;
+    margin-top: 0.35rem;
+    --ring-in: 0;
+    transform: translateX(-50%);
+  }
+
+  .game-page__seat-reminder-chip {
+    transform: translate(-50%, -50%)
+      translateX(calc(-1 * var(--reminder-stack-step) * var(--rm-i, 0)));
   }
 
   .game-page__seat-label {
@@ -722,6 +814,66 @@ button.game-page__seat:focus-visible {
 
 .game-page__assign-dialog-actions--split {
   justify-content: space-between;
+}
+
+.game-page__assign-dialog--seat-reminders {
+  max-width: min(28rem, calc(100vw - 2rem));
+  max-height: min(80vh, 36rem);
+}
+
+.game-page__seat-menu-back {
+  display: block;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--layout-focus);
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+}
+
+.game-page__seat-menu-back:hover {
+  color: var(--muted);
+}
+
+.game-page__seat-menu-reminder-defs {
+  max-height: min(52vh, 22rem);
+}
+
+.game-page__seat-menu-reminder-def-btn {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+}
+
+.game-page__seat-menu-reminder-img {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: 0.3rem;
+  flex-shrink: 0;
+  background: var(--layout-sidebar-bg);
+}
+
+.game-page__seat-menu-reminder-img--placeholder {
+  border: 1px dashed var(--layout-border);
+  background: transparent;
+}
+
+.game-page__seat-menu-reminder-def-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+  text-align: left;
 }
 
 .game-page__assign-dialog-hint--sub {
