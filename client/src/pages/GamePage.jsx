@@ -226,6 +226,8 @@ export default function GamePage() {
   const [toggleAliveError, setToggleAliveError] = useState(null)
   const [toggleAlignmentPending, setToggleAlignmentPending] = useState(false)
   const [toggleAlignmentError, setToggleAlignmentError] = useState(null)
+  const [saveSeatNotesPending, setSaveSeatNotesPending] = useState(false)
+  const [saveSeatNotesError, setSaveSeatNotesError] = useState(null)
   /** Placed reminder row ids hidden immediately on delete (optimistic UI). */
   const [removedReminderIds, setRemovedReminderIds] = useState(() => new Set())
   const [seatRingVersion, setSeatRingVersion] = useState(0)
@@ -899,6 +901,8 @@ export default function GamePage() {
     setToggleAliveError(null)
     setToggleAlignmentPending(false)
     setToggleAlignmentError(null)
+    setSaveSeatNotesPending(false)
+    setSaveSeatNotesError(null)
   }, [])
 
   const togglePlayerAliveState = useCallback(
@@ -970,6 +974,49 @@ export default function GamePage() {
     },
     [session?.gameId, authorizedFetch, closeSeatPlayerMenuModal]
   )
+
+  const closeSeatPlayerMenuActionsWithSave = useCallback(async () => {
+    const gid = session?.gameId
+    const modal = seatPlayerMenuModal
+    if (!gid || !modal || modal.view === 'reminders') {
+      closeSeatPlayerMenuModal()
+      return
+    }
+
+    const nextNotes = String(modal.notesDraft ?? '')
+    const initialNotes = String(modal.initialNotes ?? '')
+    if (nextNotes === initialNotes) {
+      closeSeatPlayerMenuModal()
+      return
+    }
+
+    setSaveSeatNotesError(null)
+    setSaveSeatNotesPending(true)
+    try {
+      const res = await authorizedFetch(
+        `/api/games/${encodeURIComponent(gid)}/player/${encodeURIComponent(modal.userId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: nextNotes }),
+        }
+      )
+      if (!res.ok) {
+        setSaveSeatNotesError(await readErrorMessage(res))
+        return
+      }
+      const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+      if (fresh.ok) {
+        const data = await fresh.json()
+        if (data?.game) setGameSnapshot(data)
+      }
+      closeSeatPlayerMenuModal()
+    } catch {
+      setSaveSeatNotesError('Could not save notes.')
+    } finally {
+      setSaveSeatNotesPending(false)
+    }
+  }, [session?.gameId, seatPlayerMenuModal, authorizedFetch, closeSeatPlayerMenuModal])
 
   const placeReminderTokenForSeatMenu = useCallback(
     async (reminderDefId, gamePlayerRowId) => {
@@ -1634,6 +1681,8 @@ export default function GamePage() {
                               assignedCharacterId: player.character_id ?? null,
                               isAlive: player.is_alive !== false,
                               alignment: player.alignment ?? null,
+                              notesDraft: String(player.notes ?? ''),
+                              initialNotes: String(player.notes ?? ''),
                               view: 'actions',
                             })
                             return
@@ -1972,6 +2021,11 @@ export default function GamePage() {
                     {toggleAlignmentError}
                   </p>
                 )}
+                {saveSeatNotesError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {saveSeatNotesError}
+                  </p>
+                )}
                 <ul className="game-page__assign-dialog-list game-page__seat-player-menu-list">
                   <li>
                     <button
@@ -2069,18 +2123,30 @@ export default function GamePage() {
                       </span>
                     </button>
                   </li>
+                  <li>
+                    <label className="game-page__field game-page__seat-notes-field">
+                      <span className="game-page__field-label">Notes</span>
+                      <textarea
+                        className="game-page__seat-notes-input"
+                        rows={4}
+                        value={String(seatPlayerMenuModal.notesDraft ?? '')}
+                        disabled={saveSeatNotesPending}
+                        onChange={(e) =>
+                          setSeatPlayerMenuModal((m) =>
+                            m && m.view !== 'reminders' ? { ...m, notesDraft: e.target.value } : m
+                          )
+                        }
+                        placeholder="Add storyteller notes for this player…"
+                      />
+                    </label>
+                  </li>
                 </ul>
                 <div className="game-page__assign-dialog-actions">
                   <button
                     type="button"
                     className="game-page__confirm-cancel"
-                    onClick={() => {
-                      setSeatPlayerMenuModal(null)
-                      setSeatMenuReminderDefs(null)
-                      setSeatMenuReminderDefsStatus('idle')
-                      setSeatMenuReminderDefsError(null)
-                      setPlaceReminderTokenPendingId(null)
-                    }}
+                    onClick={() => void closeSeatPlayerMenuActionsWithSave()}
+                    disabled={saveSeatNotesPending}
                   >
                     Close
                   </button>
