@@ -192,7 +192,14 @@ router.patch('/:id', authMiddleware, async (req, res) => {
 router.patch("/:gameID/player/:playerID", authMiddleware, async (req, res) => {
 	const user_id = req.user_id;
 	const { gameID, playerID } = req.params;
-	const { character_id, seat_order, is_alive, has_ghost_vote, vote_used, notes } = req.body;
+	const { character_id,
+		seat_order,
+		is_alive,
+		has_ghost_vote,
+		vote_used,
+		notes,
+		alignment
+	} = req.body;
 
 	try {
 		const game = await db('games')
@@ -233,6 +240,11 @@ router.patch("/:gameID/player/:playerID", authMiddleware, async (req, res) => {
 			update.seat_order = seat_order;
 		} else {
 			update.seat_order = player.seat_order;
+		}
+		if (Object.prototype.hasOwnProperty.call(req.body, 'alignment')) {
+			update.alignment = alignment;
+		} else {
+			update.alignment = player.alignment;
 		}
 
 		await db('game_players')
@@ -283,6 +295,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 				'has_ghost_vote',
 				'vote_used',
 				'notes',
+				'alignment',
 				'c.name as character_name'
 			)
 			.leftJoin('users as u', 'u.id', 'gp.user_id')
