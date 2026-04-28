@@ -2082,7 +2082,7 @@ export default function GamePage() {
                       setPlaceReminderTokenPendingId(null)
                     }}
                   >
-                    Cancel
+                    Close
                   </button>
                 </div>
               </>
