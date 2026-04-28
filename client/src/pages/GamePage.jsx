@@ -1481,6 +1481,13 @@ export default function GamePage() {
                       : null
                   const assignedCharacterIcon = assignedCharacter ? getCharacterIconSrc(assignedCharacter) : null
                   const playerIsDead = player?.is_alive === false
+                  const alignmentValue = String(player?.alignment ?? '').trim().toLowerCase()
+                  const alignmentMaskClass =
+                    alignmentValue === 'evil'
+                      ? ' game-page__seat-icon-mask--evil'
+                      : alignmentValue === 'good'
+                        ? ' game-page__seat-icon-mask--good'
+                        : ''
 
                   const seatReminders =
                     resolvedIsStoryteller && player && Array.isArray(player.reminder)
@@ -1489,7 +1496,10 @@ export default function GamePage() {
 
                   const inner = player ? (
                     <>
-                      <div className="game-page__seat-icon" aria-hidden="true">
+                      <div
+                        className={`game-page__seat-icon${alignmentMaskClass}`}
+                        aria-hidden="true"
+                      >
                         {resolvedIsStoryteller && assignedCharacterIcon && (
                           <img
                             className="game-page__seat-character-icon"
