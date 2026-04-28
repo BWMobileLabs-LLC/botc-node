@@ -91,6 +91,13 @@ function formatCharacterType(type) {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
+function alignmentForCharacterType(type) {
+  const t = String(type ?? '').trim().toLowerCase()
+  if (t === 'demon' || t === 'minion') return 'evil'
+  if (t === 'townsfolk' || t === 'outsider') return 'good'
+  return null
+}
+
 function shuffleArray(items) {
   const a = [...items]
   for (let i = a.length - 1; i > 0; i--) {
@@ -217,6 +224,8 @@ export default function GamePage() {
   const [placeReminderTokenPendingId, setPlaceReminderTokenPendingId] = useState(null)
   const [toggleAlivePending, setToggleAlivePending] = useState(false)
   const [toggleAliveError, setToggleAliveError] = useState(null)
+  const [toggleAlignmentPending, setToggleAlignmentPending] = useState(false)
+  const [toggleAlignmentError, setToggleAlignmentError] = useState(null)
   /** Placed reminder row ids hidden immediately on delete (optimistic UI). */
   const [removedReminderIds, setRemovedReminderIds] = useState(() => new Set())
   const [seatRingVersion, setSeatRingVersion] = useState(0)
@@ -888,6 +897,8 @@ export default function GamePage() {
     setPlaceReminderTokenPendingId(null)
     setToggleAlivePending(false)
     setToggleAliveError(null)
+    setToggleAlignmentPending(false)
+    setToggleAlignmentError(null)
   }, [])
 
   const togglePlayerAliveState = useCallback(
@@ -919,6 +930,42 @@ export default function GamePage() {
         setToggleAliveError('Could not update player life status.')
       } finally {
         setToggleAlivePending(false)
+      }
+    },
+    [session?.gameId, authorizedFetch, closeSeatPlayerMenuModal]
+  )
+
+  const togglePlayerAlignment = useCallback(
+    async (userId, alignment) => {
+      const gid = session?.gameId
+      if (!gid || userId == null) return
+      const current = String(alignment ?? '').trim().toLowerCase()
+      const nextAlignment = current === 'evil' ? 'good' : 'evil'
+      setToggleAlignmentError(null)
+      setToggleAlignmentPending(true)
+      try {
+        const res = await authorizedFetch(
+          `/api/games/${encodeURIComponent(gid)}/player/${encodeURIComponent(userId)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alignment: nextAlignment }),
+          }
+        )
+        if (!res.ok) {
+          setToggleAlignmentError(await readErrorMessage(res))
+          return
+        }
+        const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+        if (fresh.ok) {
+          const data = await fresh.json()
+          if (data?.game) setGameSnapshot(data)
+        }
+        closeSeatPlayerMenuModal()
+      } catch {
+        setToggleAlignmentError('Could not update player alignment.')
+      } finally {
+        setToggleAlignmentPending(false)
       }
     },
     [session?.gameId, authorizedFetch, closeSeatPlayerMenuModal]
@@ -1031,6 +1078,11 @@ export default function GamePage() {
       const gid = session?.gameId
       if (!gid || userId == null) return
       const clearing = characterId == null
+      const character =
+        !clearing && Array.isArray(gameScriptDetail?.characters)
+          ? gameScriptDetail.characters.find((c) => String(c?.id) === String(characterId))
+          : null
+      const alignment = clearing ? null : alignmentForCharacterType(character?.type)
       setCharacterPickerError(null)
       setCharacterPickerPending(true)
       try {
@@ -1039,7 +1091,10 @@ export default function GamePage() {
           {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ character_id: clearing ? null : characterId }),
+            body: JSON.stringify({
+              character_id: clearing ? null : characterId,
+              alignment,
+            }),
           }
         )
         if (!res.ok) {
@@ -1064,7 +1119,7 @@ export default function GamePage() {
         setCharacterPickerPending(false)
       }
     },
-    [session?.gameId, authorizedFetch]
+    [session?.gameId, authorizedFetch, gameScriptDetail?.characters]
   )
 
   const bulkAssignRolesToPlayers = useCallback(
@@ -1075,12 +1130,16 @@ export default function GamePage() {
       setAssignRolesPending(true)
       try {
         for (const { userId, characterId } of pairs) {
+          const character = Array.isArray(gameScriptDetail?.characters)
+            ? gameScriptDetail.characters.find((c) => String(c?.id) === String(characterId))
+            : null
+          const alignment = alignmentForCharacterType(character?.type)
           const res = await authorizedFetch(
             `/api/games/${encodeURIComponent(gid)}/player/${encodeURIComponent(userId)}`,
             {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ character_id: characterId }),
+              body: JSON.stringify({ character_id: characterId, alignment }),
             }
           )
           if (!res.ok) {
@@ -1101,7 +1160,7 @@ export default function GamePage() {
         setAssignRolesPending(false)
       }
     },
-    [session?.gameId, authorizedFetch]
+    [session?.gameId, authorizedFetch, gameScriptDetail?.characters]
   )
 
   const applyGameScript = useCallback(
@@ -1564,6 +1623,7 @@ export default function GamePage() {
                               playerLabel: playerDisplayLabel(player, seatNum),
                               assignedCharacterId: player.character_id ?? null,
                               isAlive: player.is_alive !== false,
+                              alignment: player.alignment ?? null,
                               view: 'actions',
                             })
                             return
@@ -1897,6 +1957,11 @@ export default function GamePage() {
                     {toggleAliveError}
                   </p>
                 )}
+                {toggleAlignmentError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {toggleAlignmentError}
+                  </p>
+                )}
                 <ul className="game-page__assign-dialog-list game-page__seat-player-menu-list">
                   <li>
                     <button
@@ -1944,6 +2009,31 @@ export default function GamePage() {
                         {seatPlayerMenuModal.isAlive === false
                           ? 'Mark this player as alive'
                           : 'Mark this player as dead'}
+                      </span>
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      className="game-page__assign-dialog-player"
+                      disabled={toggleAlignmentPending}
+                      onClick={() =>
+                        void togglePlayerAlignment(
+                          seatPlayerMenuModal.userId,
+                          seatPlayerMenuModal.alignment
+                        )
+                      }
+                    >
+                      <span className="game-page__assign-dialog-player-name">
+                        Alignment:{' '}
+                        {String(seatPlayerMenuModal.alignment ?? '').trim().toLowerCase() === 'evil'
+                          ? 'Evil'
+                          : String(seatPlayerMenuModal.alignment ?? '').trim().toLowerCase() === 'good'
+                            ? 'Good'
+                            : 'Unassigned'}
+                      </span>
+                      <span className="game-page__assign-dialog-player-meta">
+                        Toggle between good and evil
                       </span>
                     </button>
                   </li>
