@@ -288,6 +288,7 @@
 }
 
 .game-page__seat-icon {
+  position: relative;
   width: clamp(5.25rem, 16vw, 8rem);
   height: clamp(5.25rem, 16vw, 8rem);
   border-radius: 50%;
@@ -306,6 +307,18 @@
   width: clamp(3.2rem, 10vw, 4.4rem);
   height: clamp(3.2rem, 10vw, 4.4rem);
   object-fit: contain;
+}
+
+.game-page__seat-deathshroud {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  transform: translate(-50%, -26%);
+  pointer-events: none;
+  z-index: 2;
 }
 
 /* Placed reminder tokens: out of flow, shifted from seat centre toward ring centre */

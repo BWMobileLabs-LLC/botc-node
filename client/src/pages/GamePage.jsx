@@ -7,6 +7,7 @@ import { useGameScriptPanel } from '../context/GameScriptPanelContext.jsx'
 import { clearGameSession, loadGameSession, saveGameSession } from '../game/gameSession.js'
 import { getCharacterIconSrc } from '../utils/characterIcon.js'
 import { getReminderTokenIconSrc } from '../utils/reminderTokenIcon.js'
+import deathshroudImg from '../assets/grim_tokens/deathshroud.png'
 
 function gameIdFromApiBody(raw) {
   if (raw == null) return ''
@@ -214,6 +215,8 @@ export default function GamePage() {
   const [seatMenuReminderDefsStatus, setSeatMenuReminderDefsStatus] = useState('idle')
   const [seatMenuReminderDefsError, setSeatMenuReminderDefsError] = useState(null)
   const [placeReminderTokenPendingId, setPlaceReminderTokenPendingId] = useState(null)
+  const [toggleAlivePending, setToggleAlivePending] = useState(false)
+  const [toggleAliveError, setToggleAliveError] = useState(null)
   /** Placed reminder row ids hidden immediately on delete (optimistic UI). */
   const [removedReminderIds, setRemovedReminderIds] = useState(() => new Set())
   const [seatRingVersion, setSeatRingVersion] = useState(0)
@@ -883,7 +886,43 @@ export default function GamePage() {
     setSeatMenuReminderDefsStatus('idle')
     setSeatMenuReminderDefsError(null)
     setPlaceReminderTokenPendingId(null)
+    setToggleAlivePending(false)
+    setToggleAliveError(null)
   }, [])
+
+  const togglePlayerAliveState = useCallback(
+    async (userId, isAlive) => {
+      const gid = session?.gameId
+      if (!gid || userId == null) return
+      setToggleAliveError(null)
+      setToggleAlivePending(true)
+      try {
+        const res = await authorizedFetch(
+          `/api/games/${encodeURIComponent(gid)}/player/${encodeURIComponent(userId)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_alive: !isAlive }),
+          }
+        )
+        if (!res.ok) {
+          setToggleAliveError(await readErrorMessage(res))
+          return
+        }
+        const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+        if (fresh.ok) {
+          const data = await fresh.json()
+          if (data?.game) setGameSnapshot(data)
+        }
+        closeSeatPlayerMenuModal()
+      } catch {
+        setToggleAliveError('Could not update player life status.')
+      } finally {
+        setToggleAlivePending(false)
+      }
+    },
+    [session?.gameId, authorizedFetch, closeSeatPlayerMenuModal]
+  )
 
   const placeReminderTokenForSeatMenu = useCallback(
     async (reminderDefId, gamePlayerRowId) => {
@@ -1382,6 +1421,7 @@ export default function GamePage() {
                       ? scriptCharacterByName.get(assignedCharacterName.toLowerCase()) ?? null
                       : null
                   const assignedCharacterIcon = assignedCharacter ? getCharacterIconSrc(assignedCharacter) : null
+                  const playerIsDead = player?.is_alive === false
 
                   const seatReminders =
                     resolvedIsStoryteller && player && Array.isArray(player.reminder)
@@ -1398,6 +1438,17 @@ export default function GamePage() {
                             alt=""
                             width={56}
                             height={56}
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        )}
+                        {playerIsDead && (
+                          <img
+                            className="game-page__seat-deathshroud"
+                            src={deathshroudImg}
+                            alt=""
+                            width={128}
+                            height={128}
                             loading="lazy"
                             decoding="async"
                           />
@@ -1512,6 +1563,7 @@ export default function GamePage() {
                               gamePlayerId: player.id,
                               playerLabel: playerDisplayLabel(player, seatNum),
                               assignedCharacterId: player.character_id ?? null,
+                              isAlive: player.is_alive !== false,
                               view: 'actions',
                             })
                             return
@@ -1840,6 +1892,11 @@ export default function GamePage() {
                 <p className="game-page__assign-dialog-hint">
                   <strong>{seatPlayerMenuModal.playerLabel}</strong>
                 </p>
+                {toggleAliveError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {toggleAliveError}
+                  </p>
+                )}
                 <ul className="game-page__assign-dialog-list game-page__seat-player-menu-list">
                   <li>
                     <button
@@ -1865,6 +1922,28 @@ export default function GamePage() {
                       <span className="game-page__assign-dialog-player-name">Change character</span>
                       <span className="game-page__assign-dialog-player-meta">
                         Pick or clear a script role for this player
+                      </span>
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      className="game-page__assign-dialog-player"
+                      disabled={toggleAlivePending}
+                      onClick={() =>
+                        void togglePlayerAliveState(
+                          seatPlayerMenuModal.userId,
+                          seatPlayerMenuModal.isAlive !== false
+                        )
+                      }
+                    >
+                      <span className="game-page__assign-dialog-player-name">
+                        {seatPlayerMenuModal.isAlive === false ? 'Revive player' : 'Kill player'}
+                      </span>
+                      <span className="game-page__assign-dialog-player-meta">
+                        {seatPlayerMenuModal.isAlive === false
+                          ? 'Mark this player as alive'
+                          : 'Mark this player as dead'}
                       </span>
                     </button>
                   </li>
