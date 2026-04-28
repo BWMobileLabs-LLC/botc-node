@@ -8,7 +8,7 @@ export const up = async (knex) => {
 		table.enu('alignment', ['good', 'evil'], {
 			useNative: true,
 			enumName: 'player_alignment'
-		}).notNullable()
+		});
 	});
 };
 
