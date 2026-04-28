@@ -216,6 +216,7 @@ export default function GamePage() {
   const [placeReminderTokenPendingId, setPlaceReminderTokenPendingId] = useState(null)
   /** Placed reminder row ids hidden immediately on delete (optimistic UI). */
   const [removedReminderIds, setRemovedReminderIds] = useState(() => new Set())
+  const [seatRingVersion, setSeatRingVersion] = useState(0)
   const [assignRolesOpen, setAssignRolesOpen] = useState(false)
   const [assignRolesSelectedIds, setAssignRolesSelectedIds] = useState([])
   const [assignRolesPending, setAssignRolesPending] = useState(false)
@@ -965,7 +966,20 @@ export default function GamePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reminder_token_id: placedReminderRowId }),
         })
-        if (!res.ok) void rollback()
+        if (!res.ok) {
+          void rollback()
+          return
+        }
+        try {
+          const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+          if (fresh.ok) {
+            const data = await fresh.json()
+            if (data?.game) setGameSnapshot(data)
+          }
+        } catch {
+          /* ignore */
+        }
+        setSeatRingVersion((v) => v + 1)
       } catch {
         void rollback()
       }
@@ -1351,6 +1365,7 @@ export default function GamePage() {
           <div className="game-page__seat-stage" aria-label="Player seats">
             {gameFetchStatus === 'ok' && gameSnapshot?.game && seatCount > 0 && (
               <div
+                key={`seat-ring-${seatRingVersion}`}
                 className="game-page__seat-ring"
                 role="group"
                 style={{ '--seat-n': seatCount }}
