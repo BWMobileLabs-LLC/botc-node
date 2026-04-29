@@ -184,7 +184,7 @@ function buildRandomRoleSelection(scriptCharacters, assignableCount) {
 }
 
 export default function GamePage() {
-  const { isAuthenticated, authorizedFetch } = useAuth()
+  const { isAuthenticated, authReady, authorizedFetch } = useAuth()
   const { setScriptDetail: setPanelScriptDetail } = useGameScriptPanel()
   const [session, setSession] = useState(() => loadGameSession())
 
@@ -465,15 +465,16 @@ export default function GamePage() {
   ])
 
   useEffect(() => {
+    if (!authReady) return
     if (!isAuthenticated) {
       setSession(null)
       return
     }
     setSession(loadGameSession())
-  }, [isAuthenticated])
+  }, [authReady, isAuthenticated])
 
   useEffect(() => {
-    if (!isAuthenticated) return
+    if (!authReady || !isAuthenticated) return
     if (loadGameSession()) return
 
     let cancelled = false
@@ -495,10 +496,10 @@ export default function GamePage() {
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated, authorizedFetch, refreshSession])
+  }, [authReady, isAuthenticated, authorizedFetch, refreshSession])
 
   useEffect(() => {
-    if (!isAuthenticated || !session?.gameId) {
+    if (!authReady || !isAuthenticated || !session?.gameId) {
       setGameSnapshot(null)
       setGameFetchStatus('idle')
       setGameFetchError(null)
@@ -554,7 +555,7 @@ export default function GamePage() {
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated, session?.gameId, authorizedFetch, refreshSession])
+  }, [authReady, isAuthenticated, session?.gameId, authorizedFetch, refreshSession])
 
   useEffect(() => {
     setRemovedReminderIds(new Set())
@@ -1241,6 +1242,15 @@ export default function GamePage() {
     },
     [session?.gameId, authorizedFetch]
   )
+
+  if (!authReady) {
+    return (
+      <div className="page game-page">
+        <h1 className="page__title">Game</h1>
+        <p className="game-page__lead">Restoring session…</p>
+      </div>
+    )
+  }
 
   if (!isAuthenticated) {
     return (

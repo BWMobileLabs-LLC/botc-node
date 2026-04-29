@@ -15,7 +15,15 @@ async function readAuthError(res) {
 
 export default function AuthPage() {
   const navigate = useNavigate()
-  const { isAuthenticated, user, accessToken, applySession, signOut, authorizedFetch } = useAuth()
+  const {
+    isAuthenticated,
+    authReady,
+    user,
+    accessToken,
+    applySession,
+    signOut,
+    authorizedFetch,
+  } = useAuth()
   const [mode, setMode] = useState('signin')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -92,6 +100,8 @@ export default function AuthPage() {
   }
 
   useEffect(() => {
+    if (!authReady) return
+
     if (!isAuthenticated) {
       setEditUsername('')
       setEditEmail('')
@@ -128,7 +138,7 @@ export default function AuthPage() {
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated, authorizedFetch])
+  }, [authReady, isAuthenticated, authorizedFetch])
 
   async function onUpdateProfile(e) {
     e.preventDefault()
@@ -189,7 +199,9 @@ export default function AuthPage() {
     <div className="page auth-page">
       <h1 className="page__title">Account</h1>
 
-      {isAuthenticated ? (
+      {!authReady ? (
+        <p className="auth-profile-status">Restoring session…</p>
+      ) : isAuthenticated ? (
         <div className="auth-panel">
           <p className="auth-signed-in">
             Signed in as <strong>{user?.username ?? '…'}</strong>
