@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { io } from 'socket.io-client'
 import '../App.css'
 import './GamePage.css'
 import { useAuth } from '../auth/useAuth.js'
@@ -184,9 +185,11 @@ function buildRandomRoleSelection(scriptCharacters, assignableCount) {
 }
 
 export default function GamePage() {
-  const { isAuthenticated, authReady, authorizedFetch } = useAuth()
+  const { isAuthenticated, authReady, accessToken, authorizedFetch } = useAuth()
   const { setScriptDetail: setPanelScriptDetail } = useGameScriptPanel()
   const [session, setSession] = useState(() => loadGameSession())
+  const [socketClient, setSocketClient] = useState(null)
+  const joinedGameIdRef = useRef('')
 
   const [gameName, setGameName] = useState('')
   const [inviteInput, setInviteInput] = useState('')
@@ -254,6 +257,33 @@ export default function GamePage() {
   const refreshSession = useCallback(() => {
     setSession(loadGameSession())
   }, [])
+
+  const refreshGameSnapshot = useCallback(
+    async (gameId) => {
+      if (!authReady || !isAuthenticated || !gameId) return
+      try {
+        const res = await authorizedFetch(`/api/games/${encodeURIComponent(gameId)}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (!data?.game) return
+        setGameSnapshot(data)
+        setGameFetchStatus('ok')
+        setGameFetchError(null)
+        const stored = loadGameSession()
+        if (stored && stored.gameId === gameId && typeof data.game.is_storyteller === 'boolean') {
+          saveGameSession({
+            gameId: stored.gameId,
+            inviteCode: stored.inviteCode,
+            isStoryteller: data.game.is_storyteller,
+          })
+          refreshSession()
+        }
+      } catch {
+        // Keep current snapshot when a realtime refresh fails.
+      }
+    },
+    [authReady, isAuthenticated, authorizedFetch, refreshSession]
+  )
 
   useLayoutEffect(() => {
     const el = confirmDialogRef.current
@@ -472,6 +502,97 @@ export default function GamePage() {
     }
     setSession(loadGameSession())
   }, [authReady, isAuthenticated])
+
+  useEffect(() => {
+    if (!authReady || !isAuthenticated || !accessToken) {
+      setSocketClient((prev) => {
+        if (prev) prev.disconnect()
+        return null
+      })
+      joinedGameIdRef.current = ''
+      return
+    }
+
+    const socket = io('/', {
+      path: '/socket.io',
+      auth: { token: `Bearer ${accessToken}` },
+      withCredentials: true,
+    })
+    setSocketClient(socket)
+
+    return () => {
+      if (joinedGameIdRef.current) {
+        socket.emit('game:leave', { game_id: joinedGameIdRef.current })
+        joinedGameIdRef.current = ''
+      }
+      socket.disconnect()
+      setSocketClient((prev) => (prev === socket ? null : prev))
+    }
+  }, [authReady, isAuthenticated, accessToken])
+
+  useEffect(() => {
+    if (!socketClient) return
+
+    const targetGameId = session?.gameId ? String(session.gameId) : ''
+    const emitJoin = () => {
+      if (!targetGameId) return
+      joinedGameIdRef.current = targetGameId
+      socketClient.emit('game:join', { game_id: targetGameId })
+    }
+
+    if (socketClient.connected) emitJoin()
+    socketClient.on('connect', emitJoin)
+
+    return () => {
+      socketClient.off('connect', emitJoin)
+      if (targetGameId && joinedGameIdRef.current === targetGameId) {
+        socketClient.emit('game:leave', { game_id: targetGameId })
+        joinedGameIdRef.current = ''
+      }
+    }
+  }, [socketClient, session?.gameId])
+
+  useEffect(() => {
+    if (!socketClient) return
+
+    const onConnectError = (err) => {
+      console.warn('Socket connect_error:', err?.message ?? err)
+    }
+    const onDisconnect = (reason) => {
+      console.warn('Socket disconnected:', reason)
+    }
+
+    socketClient.on('connect_error', onConnectError)
+    socketClient.on('disconnect', onDisconnect)
+    return () => {
+      socketClient.off('connect_error', onConnectError)
+      socketClient.off('disconnect', onDisconnect)
+    }
+  }, [socketClient])
+
+  useEffect(() => {
+    if (!socketClient || !session?.gameId) return
+    const targetGameId = String(session.gameId)
+
+    const handleGameEvent = (payload) => {
+      const payloadGameId =
+        payload?.game_id != null && String(payload.game_id).trim() !== ''
+          ? String(payload.game_id).trim()
+          : ''
+      if (payloadGameId !== targetGameId) return
+      void refreshGameSnapshot(targetGameId)
+    }
+
+    socketClient.on('game:joined', handleGameEvent)
+    socketClient.on('game:created', handleGameEvent)
+    socketClient.on('game:player_joined', handleGameEvent)
+
+    return () => {
+      socketClient.off('game:joined', handleGameEvent)
+      socketClient.off('game:created', handleGameEvent)
+      socketClient.off('game:player_joined', handleGameEvent)
+    }
+  }, [socketClient, session?.gameId, refreshGameSnapshot])
 
   useEffect(() => {
     if (!authReady || !isAuthenticated) return
