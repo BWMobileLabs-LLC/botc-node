@@ -185,7 +185,7 @@ function buildRandomRoleSelection(scriptCharacters, assignableCount) {
 }
 
 export default function GamePage() {
-  const { isAuthenticated, authReady, accessToken, authorizedFetch } = useAuth()
+  const { isAuthenticated, authReady, accessToken, user, authorizedFetch } = useAuth()
   const { setScriptDetail: setPanelScriptDetail } = useGameScriptPanel()
   const [session, setSession] = useState(() => loadGameSession())
   const [socketClient, setSocketClient] = useState(null)
@@ -583,16 +583,33 @@ export default function GamePage() {
       void refreshGameSnapshot(targetGameId)
     }
 
+    const handleStateUpdated = (payload) => {
+      const payloadGameId =
+        payload?.game_id != null && String(payload.game_id).trim() !== ''
+          ? String(payload.game_id).trim()
+          : ''
+      if (payloadGameId !== targetGameId) return
+      const myId = user?.id != null ? String(user.id) : ''
+      const updatedBy =
+        payload?.updated_by != null ? String(payload.updated_by) : ''
+      if (myId !== '' && updatedBy !== '' && updatedBy === myId) {
+        return
+      }
+      void refreshGameSnapshot(targetGameId)
+    }
+
     socketClient.on('game:joined', handleGameEvent)
     socketClient.on('game:created', handleGameEvent)
     socketClient.on('game:player_joined', handleGameEvent)
+    socketClient.on('game:state_updated', handleStateUpdated)
 
     return () => {
       socketClient.off('game:joined', handleGameEvent)
       socketClient.off('game:created', handleGameEvent)
       socketClient.off('game:player_joined', handleGameEvent)
+      socketClient.off('game:state_updated', handleStateUpdated)
     }
-  }, [socketClient, session?.gameId, refreshGameSnapshot])
+  }, [socketClient, session?.gameId, user?.id, refreshGameSnapshot])
 
   useEffect(() => {
     if (!authReady || !isAuthenticated) return
