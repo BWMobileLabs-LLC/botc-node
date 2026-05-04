@@ -191,6 +191,10 @@ const createGamesRouter = (io) => {
 					updated_at: db.fn.now()
 				});
 
+			io.to(`game:${id}`).emit('game:state_updated', {
+				game_id: id,
+				updated_by: user_id
+			});
 			return res.status(200).json({ message: 'Game updated' });
 		} catch (err) {
 			console.log(err);
@@ -264,6 +268,10 @@ const createGamesRouter = (io) => {
 				})
 				.update(update);
 
+			io.to(`game:${gameID}`).emit('game:state_updated', {
+				game_id: gameID,
+				updated_by: user_id
+			});
 			return res.status(200).json({ message: 'Player updated' });
 
 		} catch (err) {
