@@ -501,6 +501,7 @@ const createGamesRouter = (io) => {
 				return res.status(403).json({ message: 'Game could not be deleted. Make sure the game is active and that you are the storyteller.' });
 			}
 
+			io.to(`game:${id}`).emit('game:ended', { game_id: id});
 			res.sendStatus(204);
 		} catch (err) {
 			console.log(err);

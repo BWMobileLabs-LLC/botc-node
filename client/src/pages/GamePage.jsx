@@ -203,6 +203,8 @@ export default function GamePage() {
   const [confirmAction, setConfirmAction] = useState(null)
   const confirmDialogRef = useRef(null)
   const [copyOk, setCopyOk] = useState(false)
+  /** Shown on the create/join lobby when another client ends the game (players only). */
+  const [lobbyNotice, setLobbyNotice] = useState(null)
   const [gameSnapshot, setGameSnapshot] = useState(null)
   const [gameFetchStatus, setGameFetchStatus] = useState('idle')
   const [gameFetchError, setGameFetchError] = useState(null)
@@ -573,6 +575,7 @@ export default function GamePage() {
   useEffect(() => {
     if (!socketClient || !session?.gameId) return
     const targetGameId = String(session.gameId)
+    const wasStoryteller = session.isStoryteller === true
 
     const handleGameEvent = (payload) => {
       const payloadGameId =
@@ -598,18 +601,47 @@ export default function GamePage() {
       void refreshGameSnapshot(targetGameId)
     }
 
+    const handleGameEnded = (payload) => {
+      const payloadGameId =
+        payload?.game_id != null && String(payload.game_id).trim() !== ''
+          ? String(payload.game_id).trim()
+          : ''
+      if (payloadGameId !== targetGameId) return
+      socketClient.emit('game:leave', { game_id: payloadGameId })
+      joinedGameIdRef.current = ''
+      clearGameSession()
+      refreshSession()
+      setGameSnapshot(null)
+      setGameFetchStatus('idle')
+      setGameFetchError(null)
+      setConfirmAction(null)
+      setAssignRolesOpen(false)
+      setScriptPickerOpen(false)
+      if (!wasStoryteller) {
+        setLobbyNotice('The storyteller has ended this game.')
+      }
+    }
+
     socketClient.on('game:joined', handleGameEvent)
     socketClient.on('game:created', handleGameEvent)
     socketClient.on('game:player_joined', handleGameEvent)
     socketClient.on('game:state_updated', handleStateUpdated)
+    socketClient.on('game:ended', handleGameEnded)
 
     return () => {
       socketClient.off('game:joined', handleGameEvent)
       socketClient.off('game:created', handleGameEvent)
       socketClient.off('game:player_joined', handleGameEvent)
       socketClient.off('game:state_updated', handleStateUpdated)
+      socketClient.off('game:ended', handleGameEnded)
     }
-  }, [socketClient, session?.gameId, user?.id, refreshGameSnapshot])
+  }, [socketClient, session?.gameId, session?.isStoryteller, user?.id, refreshGameSnapshot, refreshSession])
+
+  useEffect(() => {
+    if (!lobbyNotice) return
+    const t = window.setTimeout(() => setLobbyNotice(null), 12000)
+    return () => window.clearTimeout(t)
+  }, [lobbyNotice])
 
   useEffect(() => {
     if (!authReady || !isAuthenticated) return
@@ -723,6 +755,7 @@ export default function GamePage() {
   const onCreate = async (e) => {
     e.preventDefault()
     setCreateError(null)
+    setLobbyNotice(null)
     const name = gameName.trim()
     if (!name) {
       setCreateError('Enter a game name.')
@@ -763,6 +796,7 @@ export default function GamePage() {
   const onJoin = async (e) => {
     e.preventDefault()
     setJoinError(null)
+    setLobbyNotice(null)
     const code = inviteInput.trim()
     if (!code) {
       setJoinError('Enter an invite code.')
@@ -2661,6 +2695,11 @@ export default function GamePage() {
   return (
     <div className="page game-page">
       <h1 className="page__title">Game</h1>
+      {lobbyNotice && (
+        <p className="game-page__meta-status" role="status">
+          {lobbyNotice}
+        </p>
+      )}
       <p className="game-page__lead">Create a new lobby or join one with a code from the storyteller.</p>
 
       <div className="game-page__panels">
