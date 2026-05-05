@@ -1,0 +1,45 @@
+services:
+  botc-db:
+    image: postgres:16
+    container_name: botc-db
+    restart: unless-stopped
+    env_file: 
+      - .env.docker
+    environment: 
+      POSTGRES_USER: ${PGUSER}
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+      POSTGRES_DB: ${PGDATABASE}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  
+  botc-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: botc-api
+    restart: unless-stopped
+    depends_on:
+      - botc-db
+    env_file:
+      - .env.docker
+    environment:
+      PGHOST: botc-db
+      PGPORT: 5432
+    ports: 
+      - "3000:3000"
+
+  botc-client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.client
+    container_name: botc-client
+    restart: unless-stopped
+    depends_on:
+      - botc-api
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:
