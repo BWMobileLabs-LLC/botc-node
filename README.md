@@ -83,6 +83,108 @@ The full, current endpoint list lives in [`api-overview.md`](./api-overview.md).
 
 ---
 
+## Docker deployment
+
+I added Docker support because I plan to host this project on my home server, with a Cloudflare Tunnel in front and Portainer as my main container management UI. The Docker setup is also useful for anyone cloning this repo who wants a one-command stack (Postgres + API + client) without manual local DB setup.
+
+### What is containerized
+
+- **Postgres** (`botc-db`) from the official `postgres:16` image
+- **Backend API** (`botc-api`) from `Dockerfile.backend`
+- **Frontend** (`botc-client`) from `client/Dockerfile.client` (Vite build served by Nginx)
+
+The frontend Nginx config (`client/nginx.conf`) proxies both `/api` and `/socket.io` to the API container, so the browser can use one origin while still reaching Express + Socket.IO.
+
+### Files involved
+
+- `docker-compose.yml`
+- `Dockerfile.backend`
+- `client/Dockerfile.client`
+- `client/nginx.conf`
+- `.dockerignore`
+- `.env.docker` (not committed; create your own)
+
+### Quick start (for anyone cloning)
+
+1. **Clone and enter the project**
+
+   ```bash
+   git clone <your-fork-or-repo-url>
+   cd botc-node
+   ```
+
+2. **Create `.env.docker` at the project root**
+
+   ```env
+   PGUSER=botc_user
+   PGPASSWORD=change_me_strong_password
+   PGDATABASE=botc_db
+   PGPORT=5432
+
+   PORT=3000
+   NODE_ENV=production
+   CORS_ORIGIN=http://localhost:8080
+
+   JWT_ACCESS_SECRET=replace_with_long_random_access_secret
+   JWT_REFRESH_SECRET=replace_with_long_random_refresh_secret
+   JWT_ACCESS_EXPIRES_IN=15m
+   JWT_REFRESH_EXPIRES_IN=7d
+   ```
+
+   Notes:
+   - Compose interpolation in `docker-compose.yml` uses `${PGUSER}`, `${PGPASSWORD}`, `${PGDATABASE}`, so these keys must be present.
+   - Use quotes around values if they include special characters (especially `#`).
+   - `PGHOST` is set in compose to the service name `botc-db` for container networking.
+
+3. **Build and start**
+
+   ```bash
+   docker compose --env-file .env.docker up -d --build
+   ```
+
+4. **Run migrations and seeds**
+
+   ```bash
+   docker compose --env-file .env.docker exec botc-api npm run migrate:latest
+   docker compose --env-file .env.docker exec botc-api npm run seed
+   ```
+
+5. **Open the app**
+
+   - Frontend: `http://localhost:8080`
+   - API (direct): `http://localhost:3000`
+
+### Day-2 commands
+
+- Stop stack:
+
+  ```bash
+  docker compose --env-file .env.docker down
+  ```
+
+- Full reset (including DB volume):
+
+  ```bash
+  docker compose --env-file .env.docker down -v --remove-orphans
+  ```
+
+- Tail logs:
+
+  ```bash
+  docker compose --env-file .env.docker logs -f botc-db botc-api botc-client
+  ```
+
+### Home server + Portainer notes
+
+- This compose setup can be deployed directly as a Portainer stack.
+- You can deploy from:
+  - a Git repo (Portainer builds with `build:`), or
+  - prebuilt images in a registry (faster repeated deployments).
+- With Cloudflare Tunnel, expose the frontend service through your tunnel/public hostname and set `CORS_ORIGIN` to that public frontend origin.
+- Keep secrets in an env file that is **not** committed (for example `.env.docker` or `.env.production`), and store production values securely in Portainer/environment management.
+
+---
+
 ## Project timeline
 
 Work happened in two main phases: **the API and database first**, then **the web client** alongside **targeted changes to the server** where the UI needed new behavior or data.
