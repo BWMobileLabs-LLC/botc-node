@@ -1888,7 +1888,9 @@ export default function GamePage() {
                           useCharacterPickerOnSeatClick
                             ? player && !filledWithoutUser
                               ? `${ariaTaken}. Open seat options.`
-                              : ariaEmpty
+                              : player && filledWithoutUser
+                                ? ariaTaken
+                                : `${ariaEmpty}. Choose player to assign.`
                             : player
                               ? filledWithoutUser
                                 ? ariaTaken
@@ -1901,9 +1903,14 @@ export default function GamePage() {
                           setUnseatError(null)
 
                           if (useCharacterPickerOnSeatClick) {
-                            setAssignSeatModal(null)
                             setUnseatModal(null)
-                            if (!player || filledWithoutUser) return
+                            if (filledWithoutUser) return
+                            if (!player) {
+                              setSeatPlayerMenuModal(null)
+                              setAssignSeatModal({ seatNum })
+                              return
+                            }
+                            setAssignSeatModal(null)
                             setSeatPlayerMenuModal({
                               seatNum,
                               userId: player.user_id,
