@@ -20,14 +20,29 @@ router.get('/', async (req, res) => {
 		const scripts = await db('scripts')
 			.select('scripts.id', 'name', 'description', 'is_official', 'username as author')
 			.join('users', 'users.id', 'scripts.owner_id')
+			.where('is_official', false)
 			.limit(20)
-			.orderBy('scripts.created_at', 'asc');
+			.orderBy('scripts.created_at', 'desc');
 		res.json(scripts);
 	} catch (err) {
 		console.log(err)
 		res.status(500).json({ error: 'Failed to list scripts' });
 	}
 });
+
+router.get('/base-scripts', async (req, res) => {
+	try {
+		const scripts = await db('scripts')
+			.select('scripts.id', 'name', 'description', 'is_official', 'username as author')
+			.join('users', 'users.id', 'scripts.owner_id')
+			.where('is_official', true)
+			.orderBy('scripts.created_at', 'asc');
+		res.json(scripts);
+	} catch (err) {
+		console.log(err)
+		res.status(500).json({ error: 'Failed to list scripts' });
+	}
+})
 
 // Insert new script
 /**

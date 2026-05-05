@@ -3,20 +3,38 @@ import { Link } from 'react-router-dom'
 import '../App.css'
 import './ScriptsPage.css'
 
-async function fetchScriptList(url, setScripts, setLoadError) {
-  const res = await fetch(url)
+async function readScriptArrayResponse(res) {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.error || body.message || `Request failed (${res.status})`)
   }
   const data = await res.json()
   if (!Array.isArray(data)) {
-    setLoadError('Unexpected response from server.')
-    setScripts([])
-    return
+    throw new Error('Unexpected response from server.')
   }
-  setLoadError(null)
-  setScripts(data)
+  return data
+}
+
+function mergeBaseAndCatalog(baseList, catalogList) {
+  const base = Array.isArray(baseList) ? baseList : []
+  const more = Array.isArray(catalogList) ? catalogList : []
+  const baseIds = new Set(base.map((s) => String(s?.id)))
+  return [...base, ...more.filter((s) => s != null && !baseIds.has(String(s.id)))]
+}
+
+async function fetchScriptList(url) {
+  const res = await fetch(url)
+  return readScriptArrayResponse(res)
+}
+
+async function fetchDefaultScriptList() {
+  const [baseRes, catalogRes] = await Promise.all([
+    fetch('/api/scripts/base-scripts'),
+    fetch('/api/scripts/'),
+  ])
+  const base = await readScriptArrayResponse(baseRes)
+  const catalog = await readScriptArrayResponse(catalogRes)
+  return mergeBaseAndCatalog(base, catalog)
 }
 
 export default function ScriptsPage() {
@@ -34,7 +52,16 @@ export default function ScriptsPage() {
 
     setLoading(true)
     const t = window.setTimeout(() => {
-      fetchScriptList(url, setScripts, setLoadError)
+      const run = q
+        ? fetchScriptList(url)
+        : fetchDefaultScriptList()
+      run
+        .then((list) => {
+          if (!cancelled) {
+            setLoadError(null)
+            setScripts(list)
+          }
+        })
         .catch((err) => {
           if (!cancelled) {
             setLoadError(err.message || 'Could not load scripts.')
@@ -61,7 +88,7 @@ export default function ScriptsPage() {
         </Link>
       </div>
       <p className="scripts-page__intro">
-        Public scripts from the catalog (up to 20 when not searching). Search matches script names.
+        Base scripts appear first, then up to 20 more from the catalog. Search matches script names.
       </p>
 
       <label className="scripts-page__search">
