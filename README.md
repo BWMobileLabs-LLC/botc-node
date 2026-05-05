@@ -54,52 +54,7 @@ The **`script_characters`** join table stores a **`sort_order`** per row because
 
 ## API overview
 
-Base URL in development is typically `http://localhost:3000` (or the port set by `PORT`). JSON request bodies are expected where noted.
-
-### Auth — `/api/auth`
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/register` | Create an account; returns user summary and access token; sets refresh cookie. |
-| `POST` | `/login` | Authenticate; same token/cookie behavior as register. |
-| `POST` | `/refresh` | Use refresh cookie to obtain a new access token (and rotated refresh). |
-| `POST` | `/logout` | Revoke the current refresh session and clear the cookie. |
-| `GET` | `/me` | **Requires auth.** Returns profile fields for the current user. |
-
-Protected routes expect: `Authorization: Bearer <access_token>`.
-
-### Characters — `/api/characters`
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | List catalog characters (typed ordering for display). |
-| `GET` | `/:id` | Single character including flavor text. |
-
-### Scripts — `/api/scripts`
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | Public listing of scripts (limited batch for browsing). |
-| `GET` | `/my_scripts` | **Requires auth.** Scripts owned by the current user. |
-| `POST` | `/` | **Requires auth.** Create a script from an ordered list of character names; seeds `script_characters` with sort order. |
-| `GET` | `/:id` | Script metadata plus ordered characters (join query). |
-| `PUT` | `/:id` | **Requires auth.** Update script if you own it; replaces linked characters. |
-| `DELETE` | `/:id` | **Requires auth.** Delete script if you own it. |
-
-### Games — `/api/games`
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/` | **Requires auth.** Create a game; returns `game_id` and `invite_code`. |
-| `POST` | `/join` | **Requires auth.** Join by `invite_code` in the body. |
-| `POST` | `/:id/leave` | **Requires auth.** Remove yourself from the game roster. |
-| `PATCH` | `/:id` | **Requires auth.** Storyteller-only update of game fields (e.g. name, script, phase, status). |
-| `PATCH` | `/:gameID/player/:playerID` | **Requires auth.** Storyteller-only update of a roster row (character, seat, life, ghost vote, notes, etc.). The `:playerID` segment is the **player user’s id** (not the internal `game_players` row id). |
-| `GET` | `/:id` | **Requires auth.** Game summary and players; response is **richer for the storyteller** (including reminders and private fields) and **reduced for other players**. |
-| `DELETE` | `/:id` | **Requires auth.** Storyteller-only delete/end game. |
-| `GET` | `/:id/reminders` | **Requires auth.** Storyteller-only: reminder definitions available from the game’s active script. |
-| `POST` | `/:id/reminders` | **Requires auth.** Place a reminder token on a player (`reminder_token_id`, `player_id`, optional `text`). |
-| `DELETE` | `/:game_id/reminders` | **Requires auth.** Remove a placed token; identifier passed in the body. |
+The full, current endpoint list lives in [`api-overview.md`](./api-overview.md).
 
 ---
 
