@@ -17,9 +17,15 @@ const router = Router();
  * name ASC
  */
 router.get("/", async (req, res) => {
+	const typeRaw = req.query.type ?? req.body?.type;
+	const type =
+		typeof typeRaw === 'string' && typeRaw.trim() !== '' ? typeRaw.trim() : null;
 	try {
 		const characters = await db('characters')
 			.select('id', 'name', 'type', 'ability', 'wiki_link_name')
+			.modify((qb) => {
+				if (type) qb.where('type', type);
+			})
 			.orderByRaw(`
 				CASE type
 					WHEN 'townsfolk' THEN 1
