@@ -7,6 +7,7 @@ import { useAuth } from '../auth/useAuth.js'
 import { useGameScriptPanel } from '../context/GameScriptPanelContext.jsx'
 import { clearGameSession, loadGameSession, saveGameSession } from '../game/gameSession.js'
 import { getCharacterIconSrc } from '../utils/characterIcon.js'
+import { fetchDefaultScriptList, fetchScriptsFromUrl } from '../utils/scriptCatalog.js'
 import { getReminderTokenIconSrc } from '../utils/reminderTokenIcon.js'
 import deathshroudImg from '../assets/grim_tokens/deathshroud.png'
 
@@ -498,23 +499,16 @@ export default function GamePage() {
 
     let cancelled = false
     const q = scriptSearchInput.trim()
-    const url = q
-      ? `/api/scripts/search?${new URLSearchParams({ q })}`
-      : '/api/scripts/'
+    const url = q ? `/api/scripts/search?${new URLSearchParams({ q })}` : null
 
     setScriptSearchLoading(true)
     setScriptSearchError(null)
 
-    fetch(url)
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}))
-          throw new Error(body.message || body.error || `Request failed (${res.status})`)
-        }
-        return res.json()
-      })
+    const run = url ? fetchScriptsFromUrl(url) : fetchDefaultScriptList()
+
+    run
       .then((rows) => {
-        if (!cancelled) setScriptSearchResults(Array.isArray(rows) ? rows : [])
+        if (!cancelled) setScriptSearchResults(rows)
       })
       .catch((err) => {
         if (!cancelled) {
