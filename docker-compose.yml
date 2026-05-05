@@ -25,9 +25,7 @@ services:
     environment:
       PGHOST: botc-db
       PGPORT: 5432
-    ports: 
-      - "3000:3000"
-
+      
   botc-client:
     build:
       context: ./client
@@ -37,7 +35,7 @@ services:
     depends_on:
       - botc-api
     ports:
-      - "8080:80"
+      - "3000:80"
 
 volumes:
   pgdata:
