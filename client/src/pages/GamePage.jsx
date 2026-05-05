@@ -231,6 +231,8 @@ export default function GamePage() {
   const [toggleAliveError, setToggleAliveError] = useState(null)
   const [toggleAlignmentPending, setToggleAlignmentPending] = useState(false)
   const [toggleAlignmentError, setToggleAlignmentError] = useState(null)
+  const [toggleGhostVotePending, setToggleGhostVotePending] = useState(false)
+  const [toggleGhostVoteError, setToggleGhostVoteError] = useState(null)
   const [saveSeatNotesPending, setSaveSeatNotesPending] = useState(false)
   const [saveSeatNotesError, setSaveSeatNotesError] = useState(null)
   /** Placed reminder row ids hidden immediately on delete (optimistic UI). */
@@ -1074,6 +1076,8 @@ export default function GamePage() {
     setToggleAliveError(null)
     setToggleAlignmentPending(false)
     setToggleAlignmentError(null)
+    setToggleGhostVotePending(false)
+    setToggleGhostVoteError(null)
     setSaveSeatNotesPending(false)
     setSaveSeatNotesError(null)
   }, [])
@@ -1143,6 +1147,41 @@ export default function GamePage() {
         setToggleAlignmentError('Could not update player alignment.')
       } finally {
         setToggleAlignmentPending(false)
+      }
+    },
+    [session?.gameId, authorizedFetch, closeSeatPlayerMenuModal]
+  )
+
+  const togglePlayerGhostVote = useCallback(
+    async (userId, hasGhostVote) => {
+      const gid = session?.gameId
+      if (!gid || userId == null) return
+      const nextHasGhostVote = !hasGhostVote
+      setToggleGhostVoteError(null)
+      setToggleGhostVotePending(true)
+      try {
+        const res = await authorizedFetch(
+          `/api/games/${encodeURIComponent(gid)}/player/${encodeURIComponent(userId)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ has_ghost_vote: nextHasGhostVote }),
+          }
+        )
+        if (!res.ok) {
+          setToggleGhostVoteError(await readErrorMessage(res))
+          return
+        }
+        const fresh = await authorizedFetch(`/api/games/${encodeURIComponent(gid)}`)
+        if (fresh.ok) {
+          const data = await fresh.json()
+          if (data?.game) setGameSnapshot(data)
+        }
+        closeSeatPlayerMenuModal()
+      } catch {
+        setToggleGhostVoteError('Could not update ghost vote.')
+      } finally {
+        setToggleGhostVotePending(false)
       }
     },
     [session?.gameId, authorizedFetch, closeSeatPlayerMenuModal]
@@ -1700,7 +1739,11 @@ export default function GamePage() {
                 {seatSlots.map(({ seatNum, player }, i) => {
                   const key = `seat-${seatNum}`
                   const ariaEmpty = `Seat ${seatNum}, empty`
-                  const ariaTaken = `Seat ${seatNum}, ${playerDisplayLabel(player, seatNum)}`
+                  const playerIsDead = player?.is_alive === false
+                  const ghostVoteUsed = playerIsDead && player.has_ghost_vote === false
+                  const ariaTaken = `Seat ${seatNum}, ${playerDisplayLabel(player, seatNum)}${
+                    ghostVoteUsed ? ', ghost vote used' : ''
+                  }`
                   const seatClass = `game-page__seat${player ? ' game-page__seat--taken' : ' game-page__seat--empty'}${resolvedIsStoryteller ? ' game-page__seat--assignable' : ''}`
                   const seatStyle = { '--seat-i': i }
                   const assignedCharacterName = String(player?.character_name ?? '').trim()
@@ -1709,7 +1752,6 @@ export default function GamePage() {
                       ? scriptCharacterByName.get(assignedCharacterName.toLowerCase()) ?? null
                       : null
                   const assignedCharacterIcon = assignedCharacter ? getCharacterIconSrc(assignedCharacter) : null
-                  const playerIsDead = player?.is_alive === false
                   const alignmentValue = String(player?.alignment ?? '').trim().toLowerCase()
                   const alignmentMaskClass =
                     alignmentValue === 'evil'
@@ -1752,9 +1794,14 @@ export default function GamePage() {
                           />
                         )}
                       </div>
-                      <span className="game-page__seat-label">
-                        {playerDisplayLabel(player, seatNum)}
-                      </span>
+                      <div className="game-page__seat-meta">
+                        <span className="game-page__seat-label">
+                          {playerDisplayLabel(player, seatNum)}
+                        </span>
+                        {ghostVoteUsed && (
+                          <span className="game-page__seat-ghost-vote-used">Ghost vote used</span>
+                        )}
+                      </div>
                       {seatReminders.length > 0 && (
                         <div className="game-page__seat-reminders">
                           {seatReminders.map((r, ri) => {
@@ -1862,6 +1909,7 @@ export default function GamePage() {
                               playerLabel: playerDisplayLabel(player, seatNum),
                               assignedCharacterId: player.character_id ?? null,
                               isAlive: player.is_alive !== false,
+                              hasGhostVote: player.has_ghost_vote !== false,
                               alignment: player.alignment ?? null,
                               notesDraft: String(player.notes ?? ''),
                               initialNotes: String(player.notes ?? ''),
@@ -2203,6 +2251,11 @@ export default function GamePage() {
                     {toggleAlignmentError}
                   </p>
                 )}
+                {toggleGhostVoteError && (
+                  <p className="game-page__assign-dialog-error" role="alert">
+                    {toggleGhostVoteError}
+                  </p>
+                )}
                 {saveSeatNotesError && (
                   <p className="game-page__assign-dialog-error" role="alert">
                     {saveSeatNotesError}
@@ -2283,6 +2336,29 @@ export default function GamePage() {
                       </span>
                     </button>
                   </li>
+                  {seatPlayerMenuModal.isAlive === false && (
+                    <li>
+                      <button
+                        type="button"
+                        className="game-page__assign-dialog-player"
+                        disabled={toggleGhostVotePending}
+                        onClick={() =>
+                          void togglePlayerGhostVote(
+                            seatPlayerMenuModal.userId,
+                            seatPlayerMenuModal.hasGhostVote !== false
+                          )
+                        }
+                      >
+                        <span className="game-page__assign-dialog-player-name">
+                          Ghost vote:{' '}
+                          {seatPlayerMenuModal.hasGhostVote !== false ? 'Available' : 'Used'}
+                        </span>
+                        <span className="game-page__assign-dialog-player-meta">
+                          Toggle whether this dead player still has their ghost vote
+                        </span>
+                      </button>
+                    </li>
+                  )}
                   <li>
                     <button
                       type="button"
