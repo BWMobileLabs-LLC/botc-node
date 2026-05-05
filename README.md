@@ -1,6 +1,6 @@
 # Blood on the Clocktower — API (portfolio)
 
-This repository is a **portfolio backend** built to demonstrate practical skills in **Node.js**, **Express**, and **PostgreSQL**. It powers a web-style API for hosting and managing *Blood on the Clocktower*–style games: accounts, character data, custom scripts, and game sessions with storyteller-oriented controls.
+This repository is a **portfolio backend** (plus a **React** UI in `client/`) built to demonstrate practical skills in **Node.js**, **Express**, and **PostgreSQL**. It powers a web-style API for hosting and managing *Blood on the Clocktower*–style games: accounts, character data, custom scripts, and game sessions with storyteller-oriented controls. **[How the backend and client fit together over time](#project-timeline)** is summarized at the end of this README.
 
 ---
 
@@ -25,6 +25,7 @@ The result is code I can explain line by line and defend in an interview.
 - **HTTP:** Express 5
 - **Database:** PostgreSQL, accessed with **Knex** (migrations, query builder)
 - **Auth:** `jsonwebtoken`, `bcrypt`, `cookie-parser`
+- **Real-time:** `socket.io` (game rooms; used by the web client—see [timeline](#project-timeline))
 - **Other:** `helmet`, `cors`, `dotenv`, `nanoid` (invite codes)
 
 ---
@@ -124,6 +125,38 @@ Protected routes expect: `Authorization: Bearer <access_token>`.
    ```bash
    npm run dev
    ```
+
+---
+
+## Project timeline
+
+Work happened in two main phases: **the API and database first**, then **the web client** alongside **targeted changes to the server** where the UI needed new behavior or data.
+
+### 1. Backend first
+
+I designed and implemented **Express**, **Knex**, and **PostgreSQL** end to end—migrations, seeds, JWT auth, game and script routes, and validation against real HTTP and SQL—**without using a coding agent to write server code**. That phase is what [How this project was built](#how-this-project-was-built) describes: learning from docs and videos, Cursor in **Ask mode** for review and tradeoffs, Postman and TablePlus for verification. The portfolio goal here was **Node and Postgres depth**, not a polished UI.
+
+### 2. Web client, then follow-on API work
+
+After the backend was in place, I added the **`client/`** app: a **Vite + React** SPA (React Router) for registration/login, the character catalog, creating and editing scripts, joining games, and storyteller tooling (roster, phase, reminders, and related flows).
+
+**How the client was built:** The **frontend is 100% vibe-coded in Cursor**. I **did not write the React/JSX/CSS myself**; I **deliberately and meticulously prompted** the agent **step by step** so the UI matched what I wanted, while keeping my own focus on the skills this repo is meant to showcase.
+
+**Who changed the server in this phase:** Any **API, schema, or Socket.IO changes** made **while building or integrating the client** were **written by me**, not delegated to an agent. The backend remains work I can explain in detail.
+
+**Socket.IO:** The server runs **Socket.IO** on the same HTTP server as Express (`src/index.js`). The browser connects with the same **access JWT** as REST, joins a room `game:{game_id}` via **`game:join`** after the user is a player or storyteller, and leaves with **`game:leave`**. Handlers emit **small notification events** to that room (`game:created`, `game:player_joined`, `game:player_left`, **`game:state_updated`** with `game_id` and `updated_by`, `game:ended`, etc.)—**not** full game payloads.
+
+I chose **simplicity over fine-grained sync:** when the client hears one of these events for the game it is viewing, it **refetches the entire game** with **`GET /api/games/:id`** and replaces its snapshot, instead of pushing partial diffs over the socket. That reuses the same response shape as the initial load and avoids a second protocol to maintain. It is a good fit here because **players do not see a high rate of game-state changes** during a session. The client **skips** that refetch for **`game:state_updated`** when **`updated_by`** is the **current user**, since their own HTTP response already updated the UI.
+
+**Run the client** (API should already be running; set `CORS_ORIGIN` to the Vite origin, e.g. `http://localhost:5173`):
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+Vite proxies `/api` and `/socket.io` to the API in development (`client/vite.config.js`).
 
 ---
 
