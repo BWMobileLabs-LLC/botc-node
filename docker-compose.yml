@@ -4,7 +4,7 @@ services:
     container_name: botc-db
     restart: unless-stopped
     env_file: 
-      - .env.docker
+      - stack.env
     environment: 
       POSTGRES_USER: ${PGUSER}
       POSTGRES_PASSWORD: ${PGPASSWORD}
@@ -21,7 +21,7 @@ services:
     depends_on:
       - botc-db
     env_file:
-      - .env.docker
+      - stack.env
     environment:
       PGHOST: botc-db
       PGPORT: 5432

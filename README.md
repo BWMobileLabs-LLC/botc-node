@@ -102,7 +102,7 @@ The frontend Nginx config (`client/nginx.conf`) proxies both `/api` and `/socket
 - `client/Dockerfile.client`
 - `client/nginx.conf`
 - `.dockerignore`
-- `.env.docker` (not committed; create your own)
+- `stack.env` (not committed; create your own)
 
 ### Quick start (for anyone cloning)
 
@@ -113,7 +113,7 @@ The frontend Nginx config (`client/nginx.conf`) proxies both `/api` and `/socket
    cd botc-node
    ```
 
-2. **Create `.env.docker` at the project root**
+2. **Create `stack.env` at the project root**
 
    ```env
    PGUSER=botc_user
@@ -139,14 +139,14 @@ The frontend Nginx config (`client/nginx.conf`) proxies both `/api` and `/socket
 3. **Build and start**
 
    ```bash
-   docker compose --env-file .env.docker up -d --build
+   docker compose --env-file stack.env up -d --build
    ```
 
 4. **Run migrations and seeds**
 
    ```bash
-   docker compose --env-file .env.docker exec botc-api npm run migrate:latest
-   docker compose --env-file .env.docker exec botc-api npm run seed
+   docker compose --env-file stack.env exec botc-api npm run migrate:latest
+   docker compose --env-file stack.env exec botc-api npm run seed
    ```
 
 5. **Open the app**
@@ -159,19 +159,19 @@ The frontend Nginx config (`client/nginx.conf`) proxies both `/api` and `/socket
 - Stop stack:
 
   ```bash
-  docker compose --env-file .env.docker down
+  docker compose --env-file stack.env down
   ```
 
 - Full reset (including DB volume):
 
   ```bash
-  docker compose --env-file .env.docker down -v --remove-orphans
+  docker compose --env-file stack.env down -v --remove-orphans
   ```
 
 - Tail logs:
 
   ```bash
-  docker compose --env-file .env.docker logs -f botc-db botc-api botc-client
+  docker compose --env-file stack.env logs -f botc-db botc-api botc-client
   ```
 
 ### Home server + Portainer notes
@@ -181,7 +181,7 @@ The frontend Nginx config (`client/nginx.conf`) proxies both `/api` and `/socket
   - a Git repo (Portainer builds with `build:`), or
   - prebuilt images in a registry (faster repeated deployments).
 - With Cloudflare Tunnel, expose the frontend service through your tunnel/public hostname and set `CORS_ORIGIN` to that public frontend origin.
-- Keep secrets in an env file that is **not** committed (for example `.env.docker` or `.env.production`), and store production values securely in Portainer/environment management.
+- Keep secrets in an env file that is **not** committed (for example `stack.env` or `.env.production`), and store production values securely in Portainer/environment management.
 
 ---
 
