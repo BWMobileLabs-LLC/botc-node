@@ -319,7 +319,8 @@ const createGamesRouter = (io) => {
 					'vote_used',
 					'notes',
 					'alignment',
-					'c.name as character_name'
+					'c.name as character_name',
+					'c.type as character_type'
 				)
 				.leftJoin('users as u', 'u.id', 'gp.user_id')
 				.leftJoin('characters as c', 'gp.character_id', 'c.id')
