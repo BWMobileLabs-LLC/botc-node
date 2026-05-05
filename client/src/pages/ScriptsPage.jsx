@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import '../App.css'
 import './ScriptsPage.css'
+import { useAuth } from '../auth/useAuth.js'
 import { fetchDefaultScriptList, fetchScriptsFromUrl } from '../utils/scriptCatalog.js'
 
 export default function ScriptsPage() {
+  const { isAuthenticated, authReady } = useAuth()
   const [scripts, setScripts] = useState([])
   const [loadError, setLoadError] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -46,9 +48,11 @@ export default function ScriptsPage() {
     <div className="page scripts-page">
       <div className="scripts-page__head">
         <h1 className="page__title">Scripts</h1>
-        <Link to="/scripts/new" className="scripts-page__action-btn">
-          Create script
-        </Link>
+        {authReady && isAuthenticated && (
+          <Link to="/scripts/new" className="scripts-page__action-btn">
+            Create script
+          </Link>
+        )}
       </div>
       <p className="scripts-page__intro">
         Base scripts appear first, then up to 20 more from the catalog. Search matches script names.
