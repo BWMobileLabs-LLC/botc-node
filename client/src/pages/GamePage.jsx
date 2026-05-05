@@ -627,6 +627,7 @@ export default function GamePage() {
     socketClient.on('game:joined', handleGameEvent)
     socketClient.on('game:created', handleGameEvent)
     socketClient.on('game:player_joined', handleGameEvent)
+    socketClient.on('game:player_left', handleGameEvent)
     socketClient.on('game:state_updated', handleStateUpdated)
     socketClient.on('game:ended', handleGameEnded)
 
@@ -634,6 +635,7 @@ export default function GamePage() {
       socketClient.off('game:joined', handleGameEvent)
       socketClient.off('game:created', handleGameEvent)
       socketClient.off('game:player_joined', handleGameEvent)
+      socketClient.off('game:player_left', handleGameEvent)
       socketClient.off('game:state_updated', handleStateUpdated)
       socketClient.off('game:ended', handleGameEnded)
     }

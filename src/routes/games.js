@@ -156,6 +156,11 @@ const createGamesRouter = (io) => {
 				return res.sendStatus(404);
 			}
 
+			io.to(`game:${id}`).emit('game:player_left', {
+				game_id: id,
+				user_id
+			});
+
 			return res.status(200).json({ message: 'You have left the game' });
 		} catch (err) {
 			console.log(err);
