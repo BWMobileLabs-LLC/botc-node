@@ -1,4 +1,4 @@
-import * as characterRepository from '../repositories/character.repository.js';
+import * as characterRepository from '../repositories/character.js';
 
 export const list = async (req, res) => {
 	const typeRaw = req.query.type ?? req.body?.type;

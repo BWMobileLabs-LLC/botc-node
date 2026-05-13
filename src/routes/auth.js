@@ -12,10 +12,6 @@ import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
-/**
- * SELECT password_hash, id FROM users
- * WHERE username = username
- */
 router.post('/login', async (req, res) => {
 	const { username, password } = req.body;
 	try {
@@ -70,10 +66,6 @@ router.post('/login', async (req, res) => {
 	}
 });
 
-/**
- * INSERT INTO users (username, email, password_hash)
- * VALUES (username, email, hashed)
- */
 router.post('/register', async (req, res) => {
 	const { username, email, password } = req.body;
 	try {
@@ -121,11 +113,6 @@ router.post('/register', async (req, res) => {
 });
 
 // Get user data from username
-/**
- * SELECT username, email, display_name, create_at
- * FROM users
- * WHERE id = :id (from token)
- */
 router.get('/me', authMiddleware, async (req, res) => {
 	const id = req.user_id;
 	try {
