@@ -1,35 +1,21 @@
-import knex from 'knex';
+import pg from 'pg';
 
-const config = {
-	client: 'pg',
-	connection: {
-		host: process.env.PGHOST,
-		port: Number(process.env.PGPORT) || 5432,
-		user: process.env.PGUSER,
-		password: process.env.PGPASSWORD || undefined,
-		database: process.env.PGDATABASE,
-	},
-	pool: {
-		min: 0,
-		max: 10,
-	},
-	migrations: {
-		directory: './migrations',
-		extension: 'mjs',
-		loadExtensions: ['.mjs'],
-	},
-	seeds: {
-		directory: './seeds',
-		extension: 'mjs',
-		loadExtensions: ['.mjs'],
-	},
-};
+const { Pool } = pg;
 
-const db = knex(config);
+const pool = new Pool({
+	host: process.env.PGHOST,
+	port: Number(process.env.PGPORT) || 5432,
+	user: process.env.PGUSER,
+	password: process.env.PGPASSWORD || undefined,
+	database: process.env.PGDATABASE,
+	max: 10,
+	connectionTimeoutMillis: 10000,
+	idletimeoutMillis: 30000,
+});
 
 export const closeDb = async () => {
-	await db.destroy();
-	console.log('Knex connection pool closed.');
+	await pool.end();
+	console.log('Database connection pool closed.');
 };
 
-export default db;
+export default pool;

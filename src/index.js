@@ -73,23 +73,23 @@ io.on('connection', (socket) => {
       return;
     }
     try {
-      const player = await db('game_players')
-        .where({
-          'user_id': socket.user_id,
-          'game_id': game_id
-        })
-        .first();
+      const { rows: playerRows } = await db.query(
+        `SELECT 1 FROM game_players
+        WHERE user_id = $1 AND game_id = $2
+        LIMIT 1`,
+        [socket.user_id, game_id]
+      );
 
-      if (!player) {
+      if (playerRows.length === 0) {
         // Might be storyteller
-        const storyteller = await db('games')
-          .where({
-            'id': game_id,
-            'storyteller_id': socket.user_id
-          })
-          .first();
+        const { rows: storytellerRows } = await db.query(
+          `SELECT 1 FROM games
+          WHERE id = $1 AND storyteller_id = $2
+          LIMIT 1`,
+          [game_id, socket.user_id]
+        );
 
-        if (!storyteller) {
+        if (storytellerRows.length === 0) {
           return;
         }
       }
