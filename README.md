@@ -10,7 +10,7 @@ I started with a **detailed written prompt** describing the product I wanted (ar
 
 For the server code specifically, I **did not use an AI agent to write implementation for me**. Instead I:
 
-- **Learned from videos and docs** on topics such as Express patterns, Knex migrations, PostgreSQL design, and JWT-based auth.
+- **Learned from videos and docs** on topics such as Express patterns, Knex migrations, PostgreSQL and parameterized SQL, and JWT-based auth.
 - Used **Cursor in Ask mode** the way I would use a senior engineer: to **compare approaches**, **sanity-check decisions**, and **review code I had already written**—not to author the codebase.
 
 While building this out, I used **Postman** against a locally running server to hit each route, carry cookies and bearer tokens correctly, and confirm responses matched what I intended. I used **TablePlus** with a **local PostgreSQL** instance to **seed and inspect data**, run **ad hoc queries**, and double-check that rows and constraints looked right after migrations, seeds, and API calls—so I could trust both the database and the HTTP layer before moving on.
@@ -23,10 +23,39 @@ The result is code I can explain line by line and defend in an interview.
 
 - **Runtime:** Node.js (ES modules)
 - **HTTP:** Express 5
-- **Database:** PostgreSQL, accessed with **Knex** (migrations, query builder)
+- **Database:** PostgreSQL — **runtime queries** use the **`pg` connection pool** (`src/config/db.js`); **Knex** is kept for **migrations and seeds** only (`knexfile.mjs`, `npm run migrate:*` / `npm run seed`)
 - **Auth:** `jsonwebtoken`, `bcrypt`, `cookie-parser`
 - **Real-time:** `socket.io` (game rooms; used by the web client—see [timeline](#project-timeline))
 - **Other:** `helmet`, `cors`, `dotenv`, `nanoid` (invite codes)
+
+---
+
+## Database access: from Knex to pg
+
+The app **originally** used **Knex** for everything: migrations, seeds, **and** all Express-time queries (the fluent query builder).
+
+I **changed runtime database access to a plain `pg` `Pool`**, while **leaving Knex in place** for **`migrate:*` and `seed`** so existing migration and seed files keep working without a rewrite.
+
+**Why switch the server off Knex for queries:**
+
+- **SQL is explicit** — Every route ends up as real `SELECT` / `INSERT` / `UPDATE` with `$1`-style parameters. That is easier to reason about in reviews, explain in interviews, and tune against Postgres (indexes, `EXPLAIN`, enums).
+- **Same database, simpler runtime stack** — Knex was always generating SQL under the hood; using `pg` directly removes one layer for the hot path while I still get migrations from Knex when I need schema history.
+- **Transactions match how Postgres documents them** — `pool.connect()`, `BEGIN` / `COMMIT` / `ROLLBACK`, and `FOR UPDATE` are first-class patterns; I use them where a use case spans multiple statements (for example script creation or refresh-token rotation).
+- **Portfolio signal** — The project is meant to show **Node + Postgres** depth; driving the database with **`pg`** aligns with that story. Knex remains the right tool for **schema evolution** via the CLI.
+
+---
+
+## Server layout: routes, controllers, repositories
+
+After the **`pg`** migration was stable, I **refactored the Express side** so responsibilities are split consistently:
+
+| Layer | Role |
+|--------|------|
+| **`src/routes/`** | Mount paths, attach `authMiddleware`, delegate to controllers. Stays thin (often one line per verb). **Socket.IO**’s `io` is passed into handlers only where a route emits (for example `games` create/join/update/delete). |
+| **`src/controllers/`** | HTTP: read `req`, call repositories (and sometimes `io.emit`), set status and JSON/cookies. No raw SQL here. |
+| **`src/repositories/`** | Data access only: `pool.query` / `pool.connect()` and parameterized SQL. No `req` / `res`. |
+
+**Examples:** `src/routes/auth.js` → `src/controllers/auth.js` + `src/repositories/auth.js`; same idea for **characters**, **scripts**, and **games**. Shared pieces such as **`src/utils/jwt.js`**, **`src/middleware/auth.js`**, and **`src/config/db.js`** are unchanged in purpose (JWT helpers, auth middleware, pool config).
 
 ---
 
@@ -35,7 +64,7 @@ The result is code I can explain line by line and defend in an interview.
 The API uses a **stateless access token** plus a **server-stored refresh session**, which is a common pattern for SPAs and mobile clients:
 
 - **Access token (JWT)** — Short-lived. Returned in the JSON body on register/login/refresh. Sent by clients on protected routes via the `Authorization: Bearer <token>` header (verified in middleware).
-- **Refresh token (JWT)** — Longer-lived. Issued on register/login/refresh and sent to the browser as an **HTTP-only cookie** (not readable from JavaScript, which mitigates XSS token theft). Cookie options include `sameSite`, `secure` in production, and a narrow `path` scoped to auth routes.
+- **Refresh token (JWT)** — Longer-lived. Issued on register/login/refresh and sent to the browser as an **HTTP-only cookie** (not readable from JavaScript, which mitigates XSS token theft). Cookie options live in `src/utils/jwt.js` (`sameSite`, `secure` with sensible defaults, narrow `path`, and optional env overrides such as `JWT_REFRESH_COOKIE_*` — see `.env.example`).
 - **Refresh token storage** — Only a **SHA-256 hash** of the refresh JWT is stored in PostgreSQL (`refresh_tokens`), not the raw token. That way a database leak does not immediately expose usable refresh tokens.
 - **Rotation** — On successful refresh, a **new** refresh token is issued and the **old** row is removed, which supports revocation and reduces replay window.
 - **Passwords** — Hashed with **bcrypt** (12 rounds) before persistence.
@@ -46,7 +75,7 @@ Together this mirrors patterns you see in production APIs: short-lived access cr
 
 ## Database schema
 
-Table layouts, enums, indexes, and relationships are documented in [schema.md](./schema.md) at the root of this repository. That file reflects what the **Knex migrations** define (users, characters, scripts, games, players, reminder definitions, etc.).
+Table layouts, enums, indexes, and relationships are documented in [schema.md](./schema.md) at the root of this repository. That file reflects what the **Knex migrations** define (users, characters, scripts, games, players, reminder definitions, etc.). Application code in **`src/repositories/`** implements queries against that schema using **`pg`**.
 
 The **`script_characters`** join table stores a **`sort_order`** per row because a script is an **ordered list**: when someone creates or edits a script, the character names arrive in a sequence that matters for readability and for in-game tooling (for example, reminder definitions tied to the active script are ordered consistently). Relational joins alone do not guarantee that order, so the migration enforces it in the database and the API **returns characters in the same order they were saved**—typically by selecting with `ORDER BY sort_order`.
 
@@ -66,7 +95,7 @@ The full, current endpoint list lives in [`api-overview.md`](./api-overview.md).
    npm install
    ```
 
-2. **Environment variables** — Create a `.env` file. You need PostgreSQL connection settings (see `knexfile.mjs`: `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`) plus JWT secrets and expiry settings used in `src/utils/jwt.js` (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_ACCESS_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`). Optional: `PORT`, `CORS_ORIGIN`, `NODE_ENV`.
+2. **Environment variables** — Create a `.env` file. You need PostgreSQL connection settings (same variables as `knexfile.mjs` and `src/config/db.js`: `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`) plus JWT secrets and expiry settings in `src/utils/jwt.js` (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_ACCESS_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`). Optional: `PORT`, `CORS_ORIGIN`, `NODE_ENV`, and refresh-cookie overrides documented in `.env.example`.
 
 3. **Migrations and seeds**
 
@@ -191,7 +220,7 @@ Work happened in two main phases: **the API and database first**, then **the web
 
 ### 1. Backend first
 
-I designed and implemented **Express**, **Knex**, and **PostgreSQL** end to end—migrations, seeds, JWT auth, game and script routes, and validation against real HTTP and SQL—**without using a coding agent to write server code**. That phase is what [How this project was built](#how-this-project-was-built) describes: learning from docs and videos, Cursor in **Ask mode** for review and tradeoffs, Postman and TablePlus for verification. The portfolio goal here was **Node and Postgres depth**, not a polished UI.
+I designed and implemented **Express** and **PostgreSQL** end to end—**Knex** migrations and seeds, **JWT** auth, game and script APIs, and validation against real HTTP and SQL—**without using a coding agent to write server code**. The data layer evolved from **Knex queries** to a **`pg` pool** plus **controllers and repositories** (see [Database access: from Knex to pg](#database-access-from-knex-to-pg) and [Server layout](#server-layout-routes-controllers-repositories)); **Knex** stayed for **migrations and seeds** only. That phase is what [How this project was built](#how-this-project-was-built) describes: learning from docs and videos, Cursor in **Ask mode** for review and tradeoffs, Postman and TablePlus for verification. The portfolio goal here was **Node and Postgres depth**, not a polished UI.
 
 ### 2. Web client, then follow-on API work
 
