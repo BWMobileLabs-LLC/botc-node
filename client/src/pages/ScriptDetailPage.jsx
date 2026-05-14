@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import '../App.css'
 import './ScriptDetailPage.css'
 import { useAuth } from '../auth/useAuth.js'
@@ -144,10 +144,13 @@ function ScriptTypeSection({ type, characters }) {
 }
 
 function ScriptDetailView({ scriptId }) {
-  const { user, isAuthenticated } = useAuth()
+  const navigate = useNavigate()
+  const { user, isAuthenticated, authorizedFetch } = useAuth()
   const [script, setScript] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
 
   const canEdit =
     isAuthenticated &&
@@ -155,6 +158,43 @@ function ScriptDetailView({ scriptId }) {
     user?.username &&
     script.author &&
     user.username === script.author
+
+  const handleDeleteScript = async () => {
+    if (!canEdit || deleting) return
+    if (
+      !window.confirm(
+        `Delete “${script.name}”? This cannot be undone.`
+      )
+    ) {
+      return
+    }
+    setDeleteError(null)
+    setDeleting(true)
+    try {
+      const res = await authorizedFetch(
+        `/api/scripts/${encodeURIComponent(scriptId)}`,
+        { method: 'DELETE' }
+      )
+      if (res.status === 204) {
+        navigate('/my-scripts', { replace: true })
+        return
+      }
+      const body = await res.json().catch(() => ({}))
+      if (res.status === 403) {
+        setDeleteError(body.message || 'You can only delete scripts you own.')
+      } else if (res.status === 404) {
+        setDeleteError(body.message || 'Script not found.')
+      } else {
+        setDeleteError(
+          body.error || body.message || `Could not delete script (${res.status}).`
+        )
+      }
+    } catch (e) {
+      setDeleteError(e.message || 'Could not delete script.')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const sections = useMemo(
     () => (script?.characters?.length ? groupCharactersByType(script.characters) : []),
@@ -217,14 +257,32 @@ function ScriptDetailView({ scriptId }) {
             <div className="script-detail__title-row">
               <h1 className="page__title script-detail__title">{script.name}</h1>
               {canEdit && (
-                <Link
-                  to={`/scripts/${encodeURIComponent(scriptId)}/edit`}
-                  className="script-detail__edit"
-                >
-                  Edit script
-                </Link>
+                <div className="script-detail__actions">
+                  <Link
+                    to={`/scripts/${encodeURIComponent(scriptId)}/edit`}
+                    className="script-detail__edit"
+                  >
+                    Edit script
+                  </Link>
+                  <button
+                    type="button"
+                    className="script-detail__delete"
+                    disabled={deleting}
+                    onClick={handleDeleteScript}
+                  >
+                    {deleting ? 'Deleting…' : 'Delete script'}
+                  </button>
+                </div>
               )}
             </div>
+            {deleteError && (
+              <p
+                className="script-detail__status script-detail__status--error script-detail__delete-error"
+                role="alert"
+              >
+                {deleteError}
+              </p>
+            )}
             <div className="script-detail__meta">
               {script.is_official && (
                 <span className="script-detail__badge script-detail__badge--official">

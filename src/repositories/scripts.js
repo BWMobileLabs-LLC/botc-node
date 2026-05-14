@@ -179,5 +179,16 @@ export const updateScript = async ({ id, user_id, character_names, script_title,
 	} finally {
 		client.release();
 	}
+}
 
+export const checkForOwner = async ({ id }) => {
+	const { rows } = await db.query(
+		`SELECT owner_id FROM scripts WHERE id = $1 LIMIT 1`,
+		[id]
+	);
+	return rows;
+}
+
+export const deleteScript = async ({ id }) => {
+	await db.query(`DELETE FROM scripts WHERE id = $1`, [id]);
 }

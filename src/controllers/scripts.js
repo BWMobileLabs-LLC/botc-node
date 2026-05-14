@@ -134,5 +134,25 @@ export const updateScript = async (req, res) => {
 		message: 'Script updated',
 		script_id: id
 	});
-
 }
+
+export const deleteScript = async (req, res) => {
+	const user_id = req.user_id;
+	const { id } = req.params;
+
+	try {
+		const ownerRows = await scriptRepository.checkForOwner({ id });
+		const script_owner = ownerRows[0];
+		if (!script_owner) {
+			return res.status(404).json({ message: 'Script not found' });
+		}
+		if (script_owner.owner_id !== user_id) {
+			return res.status(403).json({ message: 'Unauthorized' });
+		}
+		await scriptRepository.deleteScript({ id });
+		res.sendStatus(204);
+	} catch (err) {
+		console.log(err);
+		res.status(500).json({ error: 'Failed to delete script' });
+	}
+};
