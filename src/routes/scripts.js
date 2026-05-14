@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import db from '../config/db.js';
 import { authMiddleware } from '../middleware/auth.js';
 
 import * as scriptsController from '../controllers/scripts.js';
